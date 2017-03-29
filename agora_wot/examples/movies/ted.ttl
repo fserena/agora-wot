@@ -1,0 +1,80 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xml: <http://www.w3.org/XML/1998/namespace> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix wot: <http://iot.linkeddata.es/def/wot#> .
+@prefix map: <http://iot.linkeddata.es/def/wot-mappings#> .
+@prefix core: <http://iot.linkeddata.es/def/core#> .
+@prefix dc: <http://purl.org/dc/terms/> .
+@prefix dbp: <http://dbpedia.org/property/> .
+@prefix amovies: <http://agora.org/amovies#> .
+@prefix dbpedia-owl: <http://dbpedia.org/ontology/> .
+
+_:ted1 a core:ThingEcosystemDescription ;
+    core:describes _:eco .
+
+_:eco a core:Ecosystem ;
+    core:hasComponent _:2046, _:1492, _:25th, _:rogue .
+
+_:2046 a dbpedia-owl:Film .
+_:1492 a dbpedia-owl:Film .
+_:25th a dbpedia-owl:Film .
+_:rogue a dbpedia-owl:Film .
+
+_:film_mapping a map:AccessMapping ;
+    map:mapsResourcesFrom [
+        a wot:Endpoint ;
+        wot:href "http://www.omdbapi.com/?t={{object(foaf:name)}}&y=&plot=short&r=json" ;
+        wot:mediaType "application/json"
+    ] ;
+    map:hasMapping [
+        map:key "imdbRating" ;
+        map:predicate amovies:rating
+    ],
+    [
+        map:key "imdbVotes" ;
+        map:predicate amovies:votes
+    ].
+
+[] a wot:ThingDescription ;
+    wot:identifier "2046" ;
+    wot:describes _:2046 ;
+    map:hasAccessMapping _:film_mapping ;
+    map:fromRDFSource [
+        a wot:Endpoint ;
+        wot:href "http://dbpedia.org/resource/2046_(film)" ;
+        wot:mediaType "text/turtle"
+    ] .
+
+[] a wot:ThingDescription ;
+    wot:identifier "1492" ;
+    wot:describes _:1492 ;
+    map:hasAccessMapping _:film_mapping ;
+    map:fromRDFSource [
+        a wot:Endpoint ;
+        wot:href "http://dbpedia.org/resource/1492:_Conquest_of_Paradise" ;
+        wot:mediaType "text/turtle"
+    ] .
+
+
+[] a wot:ThingDescription ;
+    wot:identifier "25th" ;
+    wot:describes _:25th ;
+    map:hasAccessMapping _:film_mapping ;
+    map:fromRDFSource [
+        a wot:Endpoint ;
+        wot:href "http://dbpedia.org/resource/25th_Hour" ;
+        wot:mediaType "text/turtle"
+    ] .
+
+[] a wot:ThingDescription ;
+    wot:identifier "rogue" ;
+    wot:describes _:rogue ;
+    map:hasAccessMapping _:film_mapping ;
+    map:fromRDFSource [
+        a wot:Endpoint ;
+        wot:href "http://dbpedia.org/resource/Rogue_One" ;
+        wot:mediaType "text/turtle"
+    ] .

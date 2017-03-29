@@ -1,0 +1,9 @@
+agora-py
+rdflib
+requests
+python-dateutil
+pyld
+rdflib-jsonld
+jsonpath-rw
+shortuuid
+networkx

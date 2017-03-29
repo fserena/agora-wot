@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "author": "Fernando Serena",
+  "email": "fserena@fi.upm.es",
+  "github": "https://github.com/fserena/agora-wot",
+  "description": "A Python-based framework for describing, discovering and accessing the Web of Things"
+}
