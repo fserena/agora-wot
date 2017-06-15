@@ -18,14 +18,17 @@
   limitations under the License.
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 """
+import logging
 import re
 import traceback
+
+from pyparsing import Word, alphas, alphanums, ZeroOrMore, Literal, ParseException
 
 from agora_wot.operators import lslug, objectValue
 
 __author__ = 'Fernando Serena'
 
-from pyparsing import Word, alphas, alphanums, ZeroOrMore, Literal, ParseException
+log = logging.getLogger('agora.wot')
 
 lparen = Literal("(")
 rparen = Literal(")")
@@ -59,9 +62,9 @@ def evaluate_expression(expr, **kwargs):
         f = tokens[0]
         args = tokens[2:-1]
         try:
-            return str(operators[f](*args, **kwargs))
+            return unicode(operators[f](*args, **kwargs))
         except Exception, e:
-            print e.message
+            log.error(e.message)
             traceback.print_exc()
 
 
@@ -75,8 +78,8 @@ def find_params(expr):
                     if tokens:
                         yield tokens[0] + tokens[1]
             first = False
-    except ParseException:
-        pass
+    except ParseException, e:
+        log.warn(e.message)
 
 
 def evaluate(string, **kwargs):
