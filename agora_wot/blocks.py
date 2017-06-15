@@ -33,8 +33,11 @@ from shortuuid import uuid
 from agora_wot.evaluate import find_params, evaluate
 from agora_wot.ns import CORE, WOT, MAP
 from agora_wot.utils import encode_rdict
+import logging
 
 __author__ = 'Fernando Serena'
+
+log = logging.getLogger('agora.wot')
 
 
 def describe(graph, elm, filters=[], trace=None):
@@ -47,7 +50,7 @@ def describe(graph, elm, filters=[], trace=None):
                 trace.add(triple)
                 yield triple
             if ext_node not in trace:
-                if isinstance(ext_node, BNode):
+                if isinstance(ext_node, BNode) and not list(graph.subjects(WOT.describes, ext_node)):
                     ignore = any(list(graph.triples((ext_node, x, None))) for x in filters)
                     if not ignore:
                         trace.add(ext_node)
@@ -82,6 +85,7 @@ class TD(object):
 
         resource = Resource.from_graph(graph, r_node, node_map=node_map)
         td = TD(resource)
+        node_map[node] = td
 
         try:
             td.__id = list(graph.objects(node, WOT.identifier)).pop().toPython()
@@ -96,7 +100,6 @@ class TD(object):
             rdf_source = RDFSource.from_graph(graph, rs_node, node_map=node_map)
             td.add_rdf_source(rdf_source)
 
-        node_map[node] = td
         return td
 
     @staticmethod
@@ -160,7 +163,7 @@ class TD(object):
     @property
     def vars(self):
         # type: (None) -> iter
-        return frozenset(self.__vars)
+        return self.__vars
 
 
 class Resource(object):
@@ -285,7 +288,6 @@ class Endpoint(object):
         self.href = href
         self.whref = whref
         self.order = order
-        # self.mappings = set([])
         self.media = media or 'application/json'
         self.intercept = intercept
         self.response_headers = response_headers
@@ -319,7 +321,6 @@ class Endpoint(object):
     def __add__(self, other):
         endpoint = Endpoint()
         if isinstance(other, Endpoint):
-            # endpoint.mappings.update(other.mappings)
             endpoint.media = other.media
             other = other.whref if other.href is None else other.href
 
@@ -334,9 +335,9 @@ class Endpoint(object):
 
     def invoke(self, graph=None, subject=None, **kwargs):
         href = self.evaluate_href(graph=graph, subject=subject, **kwargs)
-        print u'getting {}'.format(href)
+        log.debug(u'getting {}'.format(href))
         if self.intercept:
-            r =self.intercept(href)
+            r = self.intercept(href)
         else:
             r = requests.get(href, headers={'Accept': self.media})
         if self.response_headers is not None:
@@ -345,13 +346,14 @@ class Endpoint(object):
 
 
 class Mapping(object):
-    def __init__(self, key=None, predicate=None, transform=None, path=None, limit=None):
+    def __init__(self, key=None, predicate=None, transform=None, path=None, limit=None, root=False):
         self.key = key
         if predicate is not None:
             predicate = URIRef(predicate)
         self.predicate = predicate
         self.transform = transform
         self.path = path
+        self.root = root
         self.limit = limit
 
     @staticmethod
@@ -369,6 +371,11 @@ class Mapping(object):
 
         try:
             mapping.path = list(graph.objects(node, MAP.jsonPath)).pop()
+        except IndexError:
+            pass
+
+        try:
+            mapping.root = list(graph.objects(node, MAP.rootMode)).pop()
         except IndexError:
             pass
 
@@ -406,7 +413,10 @@ class ResourceTransform(Transform):
 
     @staticmethod
     def from_graph(graph, node, node_map):
-        td = TD.from_graph(graph, node, node_map)
+        if node in node_map:
+            td = node_map[node]
+        else:
+            td = TD.from_graph(graph, node, node_map)
         transform = ResourceTransform(td)
         return transform
 
@@ -423,8 +433,10 @@ class ResourceTransform(Transform):
             vars = kwargs['vars']
             parent_item = kwargs.get('$item', None) if '$parent' in vars else None
             base_rdict = {"$parent": parent_item} if parent_item is not None else {}
+            for var in filter(lambda x: x in kwargs, vars):
+                base_rdict[var] = kwargs[var]
             res = [uri_provider(self.td.resource.node, encode_rdict(merge({"$item": v}, base_rdict))) for v in data]
-            return res  # [:min(3, len(res))]
+            return res
         return data
 
 
@@ -463,11 +475,13 @@ class Ecosystem(object):
 
         node_block_map = {}
         root_nodes = set([])
+        td_nodes_dict = {}
         for r_node in graph.objects(node, CORE.hasComponent):
             try:
                 td_node = list(graph.subjects(predicate=WOT.describes, object=r_node)).pop()
                 td = TD.from_graph(graph, td_node, node_map=node_block_map)
                 eco.add_component_from_td(td)
+                td_nodes_dict[r_node] = td
             except IndexError:
                 resource = Resource.from_graph(graph, r_node, node_map=node_block_map)
                 eco.add_component(resource)
@@ -479,6 +493,12 @@ class Ecosystem(object):
                 td = TD.from_graph(graph, td_node, node_map=node_block_map)
                 eco.__tds.add(td)
                 eco.__resources.add(td.resource)
+                td_nodes_dict[r_node] = td
+
+        for td in eco.__tds:
+            for s, p, o in td.resource.graph.triples((None, None, None)):
+                if o in td_nodes_dict:
+                    td.vars.update(td_nodes_dict[o].vars)
 
         return eco
 
@@ -489,6 +509,16 @@ class Ecosystem(object):
     @property
     def tds(self):
         return self.__tds
+
+    @property
+    def endpoints(self):
+        yielded = []
+        for td in self.__tds:
+            for am in td.access_mappings:
+                e = am.endpoint
+                if e not in yielded:
+                    yielded.append(e)
+                    yield e
 
     def add_component_from_td(self, td):
         # type: (TD) -> None
@@ -531,7 +561,6 @@ class Ecosystem(object):
         for ch in children:
             self.__tds.add(ch)
 
-        # print network.edges()
         return network
 
     def tds_by_type(self, t):
