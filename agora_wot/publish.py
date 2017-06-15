@@ -35,7 +35,7 @@ log = logging.getLogger('agora.ted.publish')
 
 
 def build(proxy, server=None, import_name=__name__):
-    # type: (Proxy, Server, str) -> AgoraServer
+    # type: (Proxy, Server, str) -> Server
 
     if server is None:
         server = Server(import_name)
@@ -59,7 +59,7 @@ def build(proxy, server=None, import_name=__name__):
 
     @server.get('{}/<path:rid>'.format(proxy.path), produce_types=('text/turtle', 'text/html'))
     def get_gw_resource(rid):
-        g, headers = proxy.load(proxy.base + '/' + rid)
+        g, headers = proxy.load(proxy.base + '/' + rid, **request.args)
         return serialize(g)
 
     return server
