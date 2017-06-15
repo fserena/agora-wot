@@ -19,6 +19,7 @@
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 """
 import base64
+import copy
 import traceback
 from datetime import datetime
 from email._parseaddr import mktime_tz
@@ -42,8 +43,37 @@ from rdflib.term import Literal, URIRef, BNode
 
 from agora_wot.blocks import TED, TD
 from agora_wot.utils import encode_rdict
+import logging
 
 __author__ = 'Fernando Serena'
+
+log = logging.getLogger('agora.wot')
+
+
+def fltr(node, prefixes):
+    if isinstance(node, dict):
+        retVal = {}
+        for key in node:
+            if any([key.startswith(p) for p in prefixes]):
+                child = fltr(node[key], prefixes)
+                if child is not None:
+                    retVal[key] = copy.deepcopy(child)
+        if retVal:
+            return retVal
+        else:
+            return None
+    elif isinstance(node, list):
+        retVal = []
+        for entry in node:
+            child = fltr(entry, prefixes)
+            if child:
+                retVal.append(child)
+        if retVal:
+            return retVal
+        else:
+            return None
+    else:
+        return node
 
 
 def get_ns(fountain):
@@ -67,13 +97,15 @@ def path_data(path, data):
         except:
             pass
 
-    return data
+    return None
 
 
 def apply_mappings(data, mappings, ns):
     def apply_mapping(md, mapping, p_n3):
         if isinstance(md, dict):
             data_keys = list(md.keys())
+            if mapping.path:
+                data_keys = filter(lambda x: x == mapping.key, data_keys)
             for k in data_keys:
                 next_k = k
                 if k == mapping.key:
@@ -91,10 +123,15 @@ def apply_mappings(data, mappings, ns):
                     elif md[mapped_k] != mapped_v:
                         if not isinstance(md[mapped_k], list):
                             md[mapped_k] = [md[mapped_k]]
-                        if mapped_v not in md[mapped_k]:
-                            md[mapped_k].append(mapped_v)
-                            # del data[k]
-                apply_mapping(md[next_k], mapping, p_n3)
+                        mapped_lv = md[mapped_k]
+                        if isinstance(mapped_v, list):
+                            for mv in mapped_v:
+                                if mv not in mapped_lv:
+                                    mapped_lv.append(mv)
+                        elif mapped_v not in mapped_lv:
+                            mapped_lv.append(mapped_v)
+                if not mapping.path:
+                    apply_mapping(md[next_k], mapping, p_n3)
         elif isinstance(md, list):
             [apply_mapping(elm, mapping, p_n3) for elm in md]
 
@@ -102,22 +139,35 @@ def apply_mappings(data, mappings, ns):
     if container and not isinstance(data, dict):
         data = {m.key: data for m in mappings if m.key == '$container'}
 
-    for m in mappings:
+    for m in sorted(mappings, key=lambda x: x.path, reverse=True):
         p_n3 = m.predicate.n3(ns)
+        m_data = data
         if m.path is not None:
-            p_data = path_data(m.path, data)  # p_data must be a dict
-            if isinstance(data, list):
-                data = p_data
-            elif isinstance(data, dict):
-                if isinstance(p_data, list):
-                    data.update({m.key: p_data})
-                elif isinstance(p_data, dict):
-                    data.update(p_data)
+            p_data = path_data(m.path, data)
+            if not p_data:
+                continue
+            m_data = p_data
+
+        apply_mapping(m_data, m, p_n3)
+        if m.root:
+            p_n3 = m.predicate.n3(ns)
+            if isinstance(m_data, dict):
+                if m.key in m_data:
+                    data[p_n3] = m_data[p_n3]
+            elif isinstance(m_data, list):
+                m_data = filter(lambda x: x, map(lambda x: x.get(p_n3, None) if isinstance(x, dict) else x, m_data))
+                if p_n3 not in data:
+                    data[p_n3] = m_data
                 else:
-                    data[m.key] = p_data
+                    if not isinstance(data[p_n3], list):
+                        data[p_n3] = [data[p_n3]]
+                    for m in m_data:
+                        if m not in data[p_n3]:
+                            data[p_n3].append(m)
 
-        apply_mapping(data, m, p_n3)
-
+    data = fltr(data, dict(list(ns.namespaces())).keys())
+    if data is None:
+        data = {}
     return data
 
 
@@ -159,6 +209,8 @@ def ld_triples(ld, g=None):
     for triple in def_graph:
         subject = parse_term(triple['subject'])
         predicate = parse_term(triple['predicate'])
+        if not predicate.startswith('http'):
+            continue
         object = parse_term(triple['object'])
         g.add((subject, predicate, object))
 
@@ -198,8 +250,9 @@ class Proxy(object):
         if root in self.__ted.ecosystem.roots:
             uri = URIRef(self.url_for(root.id, **kwargs))
             for t in root.resource.types:
-                self.__seeds.add((uri, t.n3(self.__ns)))
-            return uri
+                t_n3 = t.n3(self.__ns)
+                self.__seeds.add((uri, t_n3))
+                yield uri, t_n3
 
     @property
     def fountain(self):
@@ -225,8 +278,9 @@ class Proxy(object):
     def path(self):
         return self.__wrapper.path
 
-    def load(self, uri, format=None):
-        return self.__wrapper.load(uri)
+    def load(self, uri, format=None, **kwargs):
+        kwargs = {k: kwargs[k].pop() for k in kwargs}
+        return self.__wrapper.load(uri, **kwargs)
 
     def compose_endpoints(self, resource):
         id = resource.id
@@ -251,15 +305,22 @@ class Proxy(object):
                 b64 = b64.replace('%3D', '=')
                 resource_args = eval(base64.b64decode(b64))
             else:
-                resource_args = {}
+                resource_args = kwargs
             r_uri = self.url_for(tid=tid, b64=b64)
             if kwargs:
                 r_uri = '{}?{}'.format(r_uri, '&'.join(['{}={}'.format(k, kwargs[k]) for k in kwargs]))
             r_uri = URIRef(r_uri)
 
+            bnode_map = {}
+
             for s, p, o in td.resource.graph:
-                if isinstance(o, BNode) and o in self.__ndict:
-                    o = URIRef(self.url_for(tid=self.__ndict[o], b64=b64))
+                if isinstance(o, BNode):
+                    if o in self.__ndict:
+                        o = URIRef(self.url_for(tid=self.__ndict[o], b64=b64))
+                    else:
+                        if o not in bnode_map:
+                            bnode_map[o] = BNode()
+                        o = bnode_map[o]
                 elif isinstance(o, Literal):
                     if str(o) in resource_args:
                         o = Literal(resource_args[str(o)], datatype=o.datatype)
@@ -267,7 +328,13 @@ class Proxy(object):
                 if s == td.resource.node:
                     s = r_uri
 
-                if not (isinstance(s, BNode) and s in self.__ndict):
+                if isinstance(s, BNode):
+                    if s not in self.__ndict:
+                        if s not in bnode_map:
+                            bnode_map[s] = BNode()
+                        s = bnode_map[s]
+                        g.add((s, p, o))
+                else:
                     g.add((s, p, o))
 
             resource_props = set([])
@@ -296,8 +363,11 @@ class Proxy(object):
                             g.add((s, p, o))
 
             if td.base:
+                invoked_endpoints = {}
                 for e in sorted(self.compose_endpoints(td), key=lambda x: x.order):
-                    response = e.invoke(graph=g, subject=r_uri, **resource_args)
+                    if str(e.href) not in invoked_endpoints:
+                        invoked_endpoints[str(e.href)] = e.invoke(graph=g, subject=r_uri, **resource_args)
+                    response = invoked_endpoints[str(e.href)]
                     if response.status_code == 200:
                         data = response.json()
                         e_mappings = td.endpoint_mappings(e)
@@ -308,7 +378,7 @@ class Proxy(object):
                         ttl = min(ttl, extract_ttl(response.headers) or ttl)
 
         except Exception as e:
-            print e.message
+            log.warn(e.message)
             traceback.print_exc()
         return g, {'Cache-Control': 'max-age={}'.format(ttl)}
 
@@ -327,10 +397,25 @@ class Proxy(object):
             b64 = encode_rdict(kwargs)
         return self.__wrapper.url_for('describe_resource', tid=tid, b64=b64)
 
-    def enrich(self, uri, data, types, fountain, ns=None, context=None, vars=None, **kwargs):
+    def n3(self, t, ns):
+        if isinstance(t, URIRef):
+            t_n3 = t.n3(ns)
+        else:
+            t_n3 = t
+        return t_n3
+
+    def enrich(self, uri, data, types, fountain, ns=None, context=None, vars=None, t_dicts=None, p_dicts=None,
+               **kwargs):
         # type: (URIRef, dict, list, AbstractFountain) -> dict
+
         if context is None:
             context = {}
+
+        if t_dicts is None:
+            t_dicts = {}
+
+        if p_dicts is None:
+            p_dicts = {}
 
         if vars is None:
             vars = set([])
@@ -338,24 +423,36 @@ class Proxy(object):
         if ns is None:
             ns = get_ns(fountain)
 
+        for t in types:
+            if t not in t_dicts:
+                t_n3 = self.n3(t, ns)
+                t_dicts[t_n3] = fountain.get_type(t_n3)
+        t_matches = {t: reduce(lambda x, y: x + int(y in d['properties']), data, 0) for t, d in
+                     t_dicts.items()}
+        max_match = max(map(lambda x: t_matches[x], t_matches))
+        if not max_match and len(types) > 1:
+            return
+
+        types = filter(lambda x: t_matches[x] == max_match, t_dicts.keys())
+        common_types = filter(lambda x: not set.intersection(set(t_dicts[x]['super']), types), types)
+        if len(common_types) > 1:
+            return
+
         j_types = []
         data['@id'] = uri
         data['@type'] = j_types
         prefixes = dict(ns.graph.namespaces())
-        for t in types:
-            if isinstance(t, URIRef):
-                t_n3 = t.n3(ns)
-            else:
-                t_n3 = t
-            props = fountain.get_type(t_n3)['properties']
-
+        for t_n3 in types:
+            props = t_dicts[t_n3]['properties']
             short_type = t_n3.split(':')[1]
             context[short_type] = {'@id': str(extend_uri(t_n3, prefixes)), '@type': '@id'}
             j_types.append(short_type)
             for p_n3 in data:
                 if p_n3 in props:
                     p = extend_uri(p_n3, prefixes)
-                    pdict = fountain.get_property(p_n3)
+                    if p_n3 not in p_dicts:
+                        p_dicts[p_n3] = fountain.get_property(p_n3)
+                    pdict = p_dicts[p_n3]
                     if pdict['type'] == 'data':
                         range = pdict['range'][0]
                         if range == 'rdfs:Resource':
@@ -370,7 +467,7 @@ class Proxy(object):
                     p_n3_data = data[p_n3]
                     if isinstance(p_n3_data, dict):
                         sub = self.enrich(BNode(shortuuid.uuid()).n3(ns), p_n3_data, pdict['range'], fountain, ns,
-                                          context)
+                                          context, vars=vars, t_dicts=t_dicts, p_dicts=p_dicts, **kwargs)
                         data[p_n3] = sub['@graph']
                     elif hasattr(p_n3_data, '__call__'):
                         data[p_n3] = p_n3_data(key=p_n3, context=context, uri_provider=self.url_for, vars=vars,
@@ -387,8 +484,9 @@ class Proxy(object):
                             data[p_n3] = []
                             for s_p_n3_data in p_n3_data:
                                 sub = self.enrich(BNode(shortuuid.uuid()).n3(ns), s_p_n3_data, pdict['range'], fountain,
-                                                  ns,
-                                                  context)
-                                data[p_n3].append(sub['@graph'])
+                                                  ns=ns, t_dicts=t_dicts, p_dicts=p_dicts,
+                                                  context=context, vars=vars, **kwargs)
+                                if sub:
+                                    data[p_n3].append(sub['@graph'])
 
         return {'@context': context, '@graph': data}
