@@ -44,7 +44,7 @@ def build(proxy, server=None, import_name=__name__):
         turtle = g.serialize(format='turtle')
         gw_host = proxy.host + '/'
         if gw_host != request.host_url:
-            turtle = turtle.replace(proxy.host + '/', request.host_url)
+            turtle = turtle.replace(request.host_url, gw_host)
         return turtle
 
     @server.get(proxy.path, produce_types=('text/turtle', 'text/html'))

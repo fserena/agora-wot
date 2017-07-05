@@ -33,9 +33,9 @@ __author__ = 'Fernando Serena'
 
 
 class Gateway(object):
-    def __init__(self, agora, ted, cache=None, port=5000, path='/gw'):
+    def __init__(self, agora, ted, cache=None, server_name='localhost', port=5000, path='/gw'):
         self.agora = agora
-        self.proxy = Proxy(ted, self.agora.fountain, server_name='localhost', server_port=port, path=path)
+        self.proxy = Proxy(ted, self.agora.fountain, server_name=server_name, server_port=port, path=path)
         self.cache = cache
         self.__interceptor = None
 
