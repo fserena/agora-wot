@@ -51,6 +51,9 @@ def build(proxy, server=None, import_name=__name__):
     def get_proxy():
         g = Graph()
         proxy_uri = URIRef(url_for('get_proxy', _external=True))
+        if 'localhost' not in proxy.base:
+            proxy_uri = URIRef(proxy.base)
+
         for s_uri, type in proxy.seeds:
             r_uri = URIRef(s_uri)
             g.add((proxy_uri, AGORA.hasSeed, r_uri))
