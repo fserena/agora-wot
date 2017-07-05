@@ -43,8 +43,8 @@ def build(proxy, server=None, import_name=__name__):
     def serialize(g):
         turtle = g.serialize(format='turtle')
         gw_host = proxy.host + '/'
-        if gw_host != request.host_url:
-            turtle = turtle.replace(request.host_url, gw_host)
+        if 'localhost' in gw_host and gw_host != request.host_url:
+            turtle = turtle.replace(gw_host, request.host_url)
         return turtle
 
     @server.get(proxy.path, produce_types=('text/turtle', 'text/html'))
@@ -60,8 +60,9 @@ def build(proxy, server=None, import_name=__name__):
 
         return serialize(g)
 
-    @server.get('{}/<path:rid>'.format(proxy.path), produce_types=('text/turtle', 'text/html'))
+    @server.get('/<path:rid>', produce_types=('text/turtle', 'text/html'))
     def get_gw_resource(rid):
+        rid = rid.replace(proxy.path.lstrip('/'), '').lstrip('/')
         g, headers = proxy.load(proxy.base + '/' + rid, **request.args)
         return serialize(g)
 
