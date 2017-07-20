@@ -81,7 +81,7 @@ class Gateway(object):
             scholar_id = m.digest().encode('base64').strip()
 
         scholar = Scholar(planner=self.agora.planner, cache=self.cache, base='store', path=self.id + '.fragments',
-                          loader=self.proxy.load, redis_db=int(self.id), persist_mode=True,
+                          loader=self.proxy.load, persist_mode=True,
                           id=scholar_id, force_seed=force_seeds, **self.__sch_init_kwargs)
         return scholar
 
