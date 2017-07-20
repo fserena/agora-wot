@@ -33,11 +33,14 @@ __author__ = 'Fernando Serena'
 
 
 class Gateway(object):
-    def __init__(self, agora, ted, cache=None, server_name='localhost', port=5000, path='/gw'):
+    def __init__(self, agora, ted, cache=None, server_name='localhost', port=5000, path='/gw', id='default',
+                 **kwargs):
         self.agora = agora
         self.proxy = Proxy(ted, self.agora.fountain, server_name=server_name, server_port=port, path=path)
         self.cache = cache
+        self.id = id
         self.__interceptor = None
+        self.__sch_init_kwargs = kwargs.copy()
 
         self.server = bs(self.agora, query_function=self.query, import_name=__name__)
         bf(self.agora, server=self.server, fragment_function=self.fragment)
@@ -70,16 +73,16 @@ class Gateway(object):
                 except KeyError:
                     pass
 
-        id = 'default'
+        scholar_id = 'default'
         if required_params:
             m = hashlib.md5()
             for k in sorted(required_params):
                 m.update(k + str(kwargs.get(k, '')))
-            id = m.digest().encode('base64').strip()
+            scholar_id = m.digest().encode('base64').strip()
 
-        scholar = Scholar(planner=self.agora.planner, cache=self.cache, base='store', path='fragments',
-                          loader=self.proxy.load, redis_file='fragments.db', persist_mode=True,
-                          id=id, force_seed=force_seeds)
+        scholar = Scholar(planner=self.agora.planner, cache=self.cache, base='store', path=self.id + '.fragments',
+                          loader=self.proxy.load, redis_db=int(self.id), persist_mode=True,
+                          id=scholar_id, force_seed=force_seeds, **self.__sch_init_kwargs)
         return scholar
 
     def query(self, query, **kwargs):
