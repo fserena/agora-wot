@@ -188,6 +188,9 @@ class Resource(object):
         for t in describe(graph, node):
             r.__graph.add(t)
 
+        for prefix, ns in graph.namespaces():
+            r.__graph.bind(prefix, ns)
+
         r.__node = node
         r.__types = set(graph.objects(node, RDF.type))
 
@@ -567,3 +570,10 @@ class Ecosystem(object):
         for td in self.__root_tds:
             if t in td.resource.types:
                 yield td
+
+    def resources_by_type(self, t):
+        try:
+            for r in filter(lambda x: isinstance(x.node, URIRef), self.__roots):
+                yield r
+        except Exception:
+            pass
