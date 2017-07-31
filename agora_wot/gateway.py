@@ -40,6 +40,7 @@ class Gateway(object):
         self.cache = cache
         self.id = id
         self.__interceptor = None
+        self.scholars = []
         self.__sch_init_kwargs = kwargs.copy()
 
         self.server = bs(self.agora, query_function=self.query, import_name=__name__)
@@ -73,16 +74,27 @@ class Gateway(object):
                 except KeyError:
                     pass
 
-        scholar_id = 'default'
+            for r in self.proxy.ecosystem.resources_by_type(ty):
+                t = r.graph.qname(ty)
+                if t not in force_seeds:
+                    force_seeds[t] = []
+                force_seeds[t].append(r.node)
+
+        scholar_id = 'd'
         if required_params:
             m = hashlib.md5()
             for k in sorted(required_params):
                 m.update(k + str(kwargs.get(k, '')))
             scholar_id = m.digest().encode('base64').strip()
 
-        scholar = Scholar(planner=self.agora.planner, cache=self.cache, base='store', path=self.id + '.fragments',
+        scholar_id = '/'.join([self.id, scholar_id])
+        scholar = Scholar(planner=self.agora.planner, cache=self.cache, path='fragments',
                           loader=self.proxy.load, persist_mode=True,
                           id=scholar_id, force_seed=force_seeds, **self.__sch_init_kwargs)
+
+        if scholar not in self.scholars:
+            self.scholars.append(scholar)
+
         return scholar
 
     def query(self, query, stop=None, **kwargs):
@@ -94,3 +106,6 @@ class Gateway(object):
         if self.__interceptor:
             kwargs = self.__interceptor(**kwargs)
         return self.agora.fragment_generator(query=query, collector=self._scholar(**kwargs))
+
+    def shutdown(self):
+        pass
