@@ -47,7 +47,7 @@ class Gateway(object):
         bf(self.agora, server=self.server, fragment_function=self.fragment)
         bp(self.agora.planner, server=self.server)
         bn(self.agora.fountain, server=self.server)
-        bpp(self.proxy, server=self.server)
+        self.server = bpp(self.proxy, server=self.server)
 
     @property
     def interceptor(self):
