@@ -19,21 +19,23 @@
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 """
 import itertools
+import logging
 from abc import abstractmethod
-from urlparse import urljoin
+from urllib import urlencode
+from urlparse import urljoin, urlparse, parse_qs, urlunparse
 
 import networkx as nx
 import requests
+from StringIO import StringIO
 from rdflib import ConjunctiveGraph
 from rdflib import Graph
 from rdflib import RDF
-from rdflib.term import Node, BNode, URIRef
+from rdflib.term import Node, BNode, URIRef, Literal
 from shortuuid import uuid
 
 from agora_wot.evaluate import find_params, evaluate
 from agora_wot.ns import CORE, WOT, MAP
 from agora_wot.utils import encode_rdict
-import logging
 
 __author__ = 'Fernando Serena'
 
@@ -50,7 +52,7 @@ def describe(graph, elm, filters=[], trace=None):
                 trace.add(triple)
                 yield triple
             if ext_node not in trace:
-                if isinstance(ext_node, BNode) and not list(graph.subjects(WOT.describes, ext_node)):
+                if isinstance(ext_node, BNode) and not list(graph.subjects(CORE.describes, ext_node)):
                     ignore = any(list(graph.triples((ext_node, x, None))) for x in filters)
                     if not ignore:
                         trace.add(ext_node)
@@ -63,6 +65,50 @@ def describe(graph, elm, filters=[], trace=None):
         yield t
 
 
+def bound_graph():
+    g = ConjunctiveGraph()
+    g.bind('core', CORE)
+    g.bind('wot', WOT)
+    g.bind('map', MAP)
+    return g
+
+
+def load_component(uri, graph, trace=None):
+    if trace is None:
+        trace = []
+
+    if uri in trace:
+        return
+
+    response = requests.get(uri)
+    trace.append(uri)
+    if response.status_code == 200:
+        comp_ttl = response.content
+        comp_g = Graph()
+        comp_g.parse(StringIO(comp_ttl), format='turtle')
+        for s, p, o in comp_g:
+            graph.add((s, p, o))
+
+    try:
+        td_uri = list(comp_g.objects(uri, CORE.describedBy)).pop()
+        load_component(td_uri, graph, trace=trace)
+
+        for s, p, o in comp_g:
+            if p != RDF.type:
+                if isinstance(o, URIRef):
+                    load_component(o, graph, trace=trace)
+                if isinstance(s, URIRef):
+                    load_component(s, graph, trace=trace)
+    except IndexError:
+        pass
+
+    try:
+        bp_uri = list(comp_g.objects(uri, CORE.describes)).pop()
+        load_component(bp_uri, graph, trace=trace)
+    except IndexError:
+        pass
+
+
 class TD(object):
     def __init__(self, resource, id=None):
         # type: (Resource) -> None
@@ -72,6 +118,7 @@ class TD(object):
         self.__rdf_sources = set([])
         self.__vars = set([])
         self.__endpoints = set([])
+        self.__node = None
 
     @staticmethod
     def from_graph(graph, node, node_map):
@@ -79,16 +126,18 @@ class TD(object):
             return node_map[node]
 
         try:
-            r_node = list(graph.objects(subject=node, predicate=WOT.describes)).pop()
+            r_node = list(graph.objects(subject=node, predicate=CORE.describes)).pop()
         except IndexError:
             raise ValueError
 
         resource = Resource.from_graph(graph, r_node, node_map=node_map)
+
         td = TD(resource)
+        td.__node = node
         node_map[node] = td
 
         try:
-            td.__id = list(graph.objects(node, WOT.identifier)).pop().toPython()
+            td.__id = list(graph.objects(node, CORE.identifier)).pop().toPython()
         except IndexError:
             pass
 
@@ -101,6 +150,39 @@ class TD(object):
             td.add_rdf_source(rdf_source)
 
         return td
+
+    def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None):
+        if graph is None:
+            graph = bound_graph()
+        if node is None:
+            node = self.node
+
+        resource_node = self.resource.node
+        if th_nodes:
+            resource_node = th_nodes.get(resource_node, resource_node)
+
+        graph.add((node, RDF.type, CORE.ThingDescription))
+        graph.add((node, CORE.describes, resource_node))
+        graph.add((node, CORE.identifier, Literal(self.id)))
+        for am in self.access_mappings:
+            am_node = BNode()
+            graph.add((node, MAP.hasAccessMapping, am_node))
+            am.to_graph(graph=graph, node=am_node, td_nodes=td_nodes)
+
+        for rdfs in self.rdf_sources:
+            r_node = BNode()
+            graph.add((node, MAP.fromRDFSource, r_node))
+            rdfs.to_graph(graph=graph, node=r_node)
+
+        r_node = self.resource.node
+        if not (th_nodes and r_node in th_nodes):
+            r_graph = self.resource.to_graph()
+            for s, p, o in r_graph:
+                ss = th_nodes.get(s, s) if th_nodes else s
+                oo = th_nodes.get(o, o) if th_nodes else o
+                graph.add((ss, p, oo))
+
+        return graph
 
     @staticmethod
     def from_types(types=[], id=None, uri=None):
@@ -122,6 +204,7 @@ class TD(object):
 
     def clone(self, id=None, **kwargs):
         new = TD(self.__resource, id=id)
+        new.__node = self.node
         for am in self.access_mappings:
             am_end = am.endpoint
             href = am_end.evaluate_href(**{'$' + k: kwargs[k] for k in kwargs})
@@ -165,11 +248,15 @@ class TD(object):
         # type: (None) -> iter
         return self.__vars
 
+    @property
+    def node(self):
+        return self.__node
+
 
 class Resource(object):
     def __init__(self, uri=None, types=None):
         # type: (any, iter) -> None
-        self.__graph = ConjunctiveGraph()
+        self.__graph = bound_graph()
         self.__node = uri
         if self.__node is None:
             self.__node = BNode()
@@ -196,6 +283,12 @@ class Resource(object):
 
         node_map[node] = r
         return r
+
+    def to_graph(self, graph=None):
+        if graph is not None:
+            graph.__iadd__(self.graph)
+
+        return self.graph
 
     @property
     def types(self):
@@ -245,6 +338,25 @@ class AccessMapping(object):
 
         node_map[node] = am
         return am
+
+    def to_graph(self, graph=None, node=None, td_nodes=None):
+        if graph is None:
+            graph = bound_graph()
+        if node is None:
+            node = BNode()
+
+        graph.add((node, RDF.type, MAP.AccessMapping))
+
+        e_node = BNode()
+        graph.add((node, MAP.mapsResourcesFrom, e_node))
+        self.endpoint.to_graph(graph=graph, node=e_node)
+
+        for m in self.mappings:
+            m_node = BNode()
+            m.to_graph(graph=graph, node=m_node, td_nodes=td_nodes)
+            graph.add((node, MAP.hasMapping, m_node))
+
+        return graph
 
     @property
     def vars(self):
@@ -321,6 +433,23 @@ class Endpoint(object):
         node_map[node] = endpoint
         return endpoint
 
+    def to_graph(self, graph=None, node=None):
+        if graph is None:
+            graph = bound_graph()
+        if node is None:
+            node = BNode()
+
+        graph.add((node, RDF.type, WOT.Endpoint))
+        if self.href:
+            graph.add((node, WOT.href, Literal(self.href)))
+        if self.order:
+            graph.add((node, WOT.href, Literal(self.order)))
+        if self.whref:
+            graph.add((node, WOT.withHRef, Literal(self.whref)))
+        graph.add((node, WOT.mediaType, Literal(self.media)))
+
+        return graph
+
     def __add__(self, other):
         endpoint = Endpoint()
         if isinstance(other, Endpoint):
@@ -338,6 +467,18 @@ class Endpoint(object):
 
     def invoke(self, graph=None, subject=None, **kwargs):
         href = self.evaluate_href(graph=graph, subject=subject, **kwargs)
+
+        filtered_query = {}
+        href_parse = urlparse(href)
+        for v, vals in parse_qs(href_parse[4]).items():
+            if not any(map(lambda x: x.startswith('$'), vals)):
+                filtered_query[v] = vals.pop()
+
+        query_str = urlencode(filtered_query)
+        href_parse = list(href_parse[:])
+        href_parse[4] = query_str
+        href = urlunparse(tuple(href_parse))
+
         log.debug(u'getting {}'.format(href))
         if self.intercept:
             r = self.intercept(href)
@@ -391,9 +532,31 @@ class Mapping(object):
         node_map[node] = mapping
         return mapping
 
+    def to_graph(self, graph=None, node=None, td_nodes=None):
+        if graph is None:
+            graph = bound_graph()
+        if node is None:
+            node = BNode()
+
+        graph.add((node, RDF.type, MAP.Mapping))
+        graph.add((node, MAP.predicate, URIRef(self.predicate)))
+        graph.add((node, MAP.key, Literal(self.key)))
+        graph.add((node, MAP.rootMode, Literal(self.root)))
+        if self.path:
+            graph.add((node, MAP.jsonPath, Literal(self.path)))
+        if self.transform:
+            transform_node = td_nodes.get(self.transform.td, None) if td_nodes else None
+            if transform_node:
+                graph.add((node, MAP.valuesTransformedBy, transform_node))
+
+        return graph
+
 
 def create_transform(graph, node, node_map):
-    if list(graph.triples((node, RDF.type, WOT.ThingDescription))):
+    # if isinstance(node, URIRef):
+    #     load_component(node, graph)
+
+    if list(graph.triples((node, RDF.type, CORE.ThingDescription))):
         return ResourceTransform.from_graph(graph, node, node_map=node_map)
 
 
@@ -433,7 +596,7 @@ class ResourceTransform(Transform):
             uri_provider = kwargs['uri_provider']
             if not isinstance(data, list):
                 data = [data]
-            vars = kwargs['vars']
+            vars = self.td.vars
             parent_item = kwargs.get('$item', None) if '$parent' in vars else None
             base_rdict = {"$parent": parent_item} if parent_item is not None else {}
             for var in filter(lambda x: x in kwargs, vars):
@@ -452,6 +615,23 @@ class TED(object):
         ted = TED()
         ted.__ecosystem = Ecosystem.from_graph(graph)
         return ted
+
+    def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None):
+        if graph is None:
+            graph = bound_graph()
+        if node is None:
+            node = BNode()
+
+        eco_node = BNode()
+        self.ecosystem.to_graph(graph=graph, node=eco_node, td_nodes=td_nodes, th_nodes=th_nodes)
+        graph.add((node, RDF.type, CORE.TED))
+        graph.add((node, CORE.describes, eco_node))
+
+        if td_nodes:
+            for td_node in td_nodes.values():
+                graph.add((node, CORE.usesTD, td_node))
+
+        return graph
 
     @property
     def ecosystem(self):
@@ -479,9 +659,18 @@ class Ecosystem(object):
         node_block_map = {}
         root_nodes = set([])
         td_nodes_dict = {}
+
+        load_trace = []
+
+        for _, ext_td in graph.subject_objects(MAP.valuesTransformedBy):
+            if isinstance(ext_td, URIRef):
+                load_component(ext_td, graph, trace=load_trace)
+
         for r_node in graph.objects(node, CORE.hasComponent):
+            if isinstance(r_node, URIRef) and not list(graph.objects(r_node, RDF.type)):
+                load_component(r_node, graph, trace=load_trace)
             try:
-                td_node = list(graph.subjects(predicate=WOT.describes, object=r_node)).pop()
+                td_node = list(graph.subjects(predicate=CORE.describes, object=r_node)).pop()
                 td = TD.from_graph(graph, td_node, node_map=node_block_map)
                 eco.add_component_from_td(td)
                 td_nodes_dict[r_node] = td
@@ -491,8 +680,8 @@ class Ecosystem(object):
 
             root_nodes.add(r_node)
 
-        for td_node, r_node in graph.subject_objects(predicate=WOT.describes):
-            if r_node not in root_nodes:
+        for td_node, r_node in graph.subject_objects(predicate=CORE.describes):
+            if (td_node, RDF.type, CORE.ThingDescription) in graph and r_node not in root_nodes:
                 td = TD.from_graph(graph, td_node, node_map=node_block_map)
                 eco.__tds.add(td)
                 eco.__resources.add(td.resource)
@@ -504,6 +693,31 @@ class Ecosystem(object):
                     td.vars.update(td_nodes_dict[o].vars)
 
         return eco
+
+    def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None):
+        if graph is None:
+            graph = bound_graph()
+        if node is None:
+            node = BNode()
+        if td_nodes is None:
+            td_nodes = {td: BNode() for td in self.tds}
+
+        graph.add((node, RDF.type, CORE.Ecosystem))
+        roots = self.roots
+
+        for td in self.tds:
+            if td in roots:
+                graph.add(
+                    (node, CORE.hasComponent, td.resource.node if not th_nodes else th_nodes.get(td.resource.node)))
+
+            td_node = td_nodes[td]
+            td.to_graph(graph=graph, node=td_node, td_nodes=td_nodes, th_nodes=th_nodes)
+
+        for root in filter(lambda x: not isinstance(x, TD), self.roots):
+            graph.add((node, CORE.hasComponent, root.node))
+            root.to_graph(graph)
+
+        return graph
 
     @property
     def resources(self):
