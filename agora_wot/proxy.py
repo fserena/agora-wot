@@ -42,6 +42,7 @@ from rdflib import XSD
 from rdflib.term import Literal, URIRef, BNode
 
 from agora_wot.blocks import TED, TD
+from agora_wot.ns import CORE
 from agora_wot.utils import encode_rdict
 import logging
 
@@ -152,18 +153,20 @@ def apply_mappings(data, mappings, ns):
         if m.root:
             p_n3 = m.predicate.n3(ns)
             if isinstance(m_data, dict):
-                if m.key in m_data:
-                    data[p_n3] = m_data[p_n3]
-            elif isinstance(m_data, list):
-                m_data = filter(lambda x: x, map(lambda x: x.get(p_n3, None) if isinstance(x, dict) else x, m_data))
-                if p_n3 not in data:
-                    data[p_n3] = m_data
-                else:
-                    if not isinstance(data[p_n3], list):
-                        data[p_n3] = [data[p_n3]]
-                    for m in m_data:
-                        if m not in data[p_n3]:
-                            data[p_n3].append(m)
+                m_data = [m_data]
+            m_data = filter(lambda x: x, map(lambda x: x.get(p_n3, None) if isinstance(x, dict) else x, m_data))
+
+            # CHECK THIS!!!
+            if isinstance(data, list):
+                data = {'$container': data}
+            if p_n3 not in data:
+                data[p_n3] = m_data
+            else:
+                if not isinstance(data[p_n3], list):
+                    data[p_n3] = [data[p_n3]]
+                for m in m_data:
+                    if m not in data[p_n3]:
+                        data[p_n3].append(m)
 
     data = fltr(data, dict(list(ns.namespaces())).keys())
     if data is None:
@@ -232,6 +235,7 @@ class Proxy(object):
         self.__wrapper.intercept('{}/<tid>'.format(path))(self.describe_resource)
         self.__wrapper.intercept('{}/<tid>/<b64>'.format(path))(self.describe_resource)
         self.__network = self.__ted.ecosystem.network()
+        self.__interceptor = None
 
         for root in ted.ecosystem.roots:
             if isinstance(root, TD):
@@ -253,6 +257,52 @@ class Proxy(object):
                 t_n3 = t.n3(self.__ns)
                 self.__seeds.add((uri, t_n3))
                 yield uri, t_n3
+
+    @property
+    def interceptor(self):
+        return self.__interceptor
+
+    @interceptor.setter
+    def interceptor(self, i):
+        self.__interceptor = i
+
+    @property
+    def parameters(self):
+        params = set()
+        for ty in self.ecosystem.root_types:
+            for td in self.ecosystem.tds_by_type(ty):
+                var_params = set([v.lstrip('$') for v in td.vars])
+                params.update(var_params)
+
+        return params
+
+    def process_arguments(self, **kwargs):
+        return {k: v.pop() if isinstance(v, list) else v for k, v in kwargs.items()}
+
+    def instantiate_seeds(self, **kwargs):
+        seeds = {}
+        kwargs = self.process_arguments(**kwargs)
+        if self.interceptor:
+            kwargs = self.interceptor(**kwargs)
+
+        for ty in self.ecosystem.root_types:
+            for td in self.ecosystem.tds_by_type(ty):
+                try:
+                    var_params = set([v.lstrip('$') for v in td.vars])
+                    params = {'$' + v: kwargs[v] for v in var_params}
+                    for seed, t in self.instantiate_seed(td, **params):
+                        if t not in seeds:
+                            seeds[t] = []
+                        seeds[t].append(seed)
+                except KeyError:
+                    pass
+
+            for r in self.ecosystem.resources_by_type(ty):
+                t = r.graph.qname(ty)
+                if t not in seeds:
+                    seeds[t] = []
+                seeds[t].append(r.node)
+        return seeds
 
     @property
     def fountain(self):
@@ -314,13 +364,12 @@ class Proxy(object):
             bnode_map = {}
 
             for s, p, o in td.resource.graph:
-                if isinstance(o, BNode):
-                    if o in self.__ndict:
-                        o = URIRef(self.url_for(tid=self.__ndict[o], b64=b64))
-                    else:
-                        if o not in bnode_map:
-                            bnode_map[o] = BNode()
-                        o = bnode_map[o]
+                if o in self.__ndict:
+                    o = URIRef(self.url_for(tid=self.__ndict[o], b64=b64))
+                elif isinstance(o, BNode):
+                    if o not in bnode_map:
+                        bnode_map[o] = BNode()
+                    o = bnode_map[o]
                 elif isinstance(o, Literal):
                     if str(o) in resource_args:
                         o = Literal(resource_args[str(o)], datatype=o.datatype)
@@ -379,7 +428,6 @@ class Proxy(object):
 
         except Exception as e:
             log.warn(e.message)
-            traceback.print_exc()
         return g, {'Cache-Control': 'max-age={}'.format(ttl)}
 
     def clear_seeds(self):
@@ -391,7 +439,7 @@ class Proxy(object):
                 self.__fountain.delete_type_seeds(t_n3)
 
     def url_for(self, tid, b64=None, **kwargs):
-        if isinstance(tid, BNode) and tid in self.__ndict:
+        if tid in self.__ndict:
             tid = self.__ndict[tid]
         if b64 is None and kwargs:
             b64 = encode_rdict(kwargs)
