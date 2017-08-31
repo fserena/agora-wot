@@ -24,8 +24,8 @@ from threading import Lock
 
 from os.path import commonprefix
 
-from flask import request, url_for
-from rdflib import Graph
+from flask import request
+from rdflib import Graph, RDF
 from rdflib import URIRef
 
 from agora.engine.plan.graph import AGORA
@@ -77,11 +77,15 @@ def build(proxy, server=None, import_name=__name__):
     @gateway.get(proxy.path, produce_types=('text/turtle', 'text/html'))
     def get_proxy():
         g = Graph()
-        proxy_uri = URIRef(url_for('get_proxy', _external=True))
-        if 'localhost' not in proxy.base:
-            proxy_uri = URIRef(proxy.base)
-
-        for s_uri, type in proxy.seeds:
+        base = proxy.base
+        if request.args:
+            base += '?' + request.query_string
+        proxy_uri = URIRef(base)
+        g.bind('agora', AGORA)
+        g.add((proxy_uri, RDF.type, AGORA.Gateway))
+        seeds = proxy.instantiate_seeds(**request.args)
+        seed_uris = set(reduce(lambda x, y: x + y, seeds.values(), []))
+        for s_uri in seed_uris:
             r_uri = URIRef(s_uri)
             g.add((proxy_uri, AGORA.hasSeed, r_uri))
 
