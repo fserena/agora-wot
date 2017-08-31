@@ -39,8 +39,7 @@ class Gateway(object):
         self.proxy = Proxy(ted, self.agora.fountain, server_name=server_name, server_port=port, path=path)
         self.cache = cache
         self.id = id
-        self.__interceptor = None
-        self.scholars = []
+        self.scholars = {}
         self.__sch_init_kwargs = kwargs.copy()
 
         self.server = bs(self.agora, query_function=self.query, import_name=__name__)
@@ -51,36 +50,18 @@ class Gateway(object):
 
     @property
     def interceptor(self):
-        return self.__interceptor
+        return self.proxy.interceptor
 
     @interceptor.setter
     def interceptor(self, i):
-        self.__interceptor = i
+        self.proxy.interceptor = i
 
     def _scholar(self, **kwargs):
-        force_seeds = {}
-        required_params = set()
         self.proxy.clear_seeds()
-        for ty in self.proxy.ecosystem.root_types:
-            for td in self.proxy.ecosystem.tds_by_type(ty):
-                try:
-                    var_params = set([v.lstrip('$') for v in td.vars])
-                    params = {'$' + v: kwargs[v] for v in var_params}
-                    for seed, t in self.proxy.instantiate_seed(td, **params):
-                        if t not in force_seeds:
-                            force_seeds[t] = []
-                        force_seeds[t].append(seed)
-                    required_params.update(var_params)
-                except KeyError:
-                    pass
-
-            for r in self.proxy.ecosystem.resources_by_type(ty):
-                t = r.graph.qname(ty)
-                if t not in force_seeds:
-                    force_seeds[t] = []
-                force_seeds[t].append(r.node)
+        force_seeds = self.proxy.instantiate_seeds(**kwargs)
 
         scholar_id = 'd'
+        required_params = self.proxy.parameters
         if required_params:
             m = hashlib.md5()
             for k in sorted(required_params):
@@ -88,24 +69,31 @@ class Gateway(object):
             scholar_id = m.digest().encode('base64').strip()
 
         scholar_id = '/'.join([self.id, scholar_id])
-        scholar = Scholar(planner=self.agora.planner, cache=self.cache, path='fragments',
-                          loader=self.proxy.load, persist_mode=True,
-                          id=scholar_id, force_seed=force_seeds, **self.__sch_init_kwargs)
 
-        if scholar not in self.scholars:
-            self.scholars.append(scholar)
+        if scholar_id not in self.scholars.keys():
+            scholar = Scholar(planner=self.agora.planner, cache=self.cache, path='fragments',
+                              loader=self.proxy.load, persist_mode=True,
+                              id=scholar_id, force_seed=force_seeds, **self.__sch_init_kwargs)
+            self.scholars[scholar_id] = scholar
 
-        return scholar
+        return self.scholars[scholar_id]
 
     def query(self, query, stop=None, **kwargs):
-        if self.__interceptor:
-            kwargs = self.__interceptor(**kwargs)
+        if self.interceptor:
+            kwargs = self.interceptor(**kwargs)
         return self.agora.query(query, stop=stop, collector=self._scholar(**kwargs))
 
     def fragment(self, query, **kwargs):
-        if self.__interceptor:
-            kwargs = self.__interceptor(**kwargs)
+        if self.interceptor:
+            kwargs = self.interceptor(**kwargs)
         return self.agora.fragment_generator(query=query, collector=self._scholar(**kwargs))
 
     def shutdown(self):
-        pass
+        for scholar in self.scholars.values():
+            try:
+                scholar.index.clear()
+                scholar.shutdown()
+            except Exception as e:
+                print e.message
+
+        self.scholars.clear()
