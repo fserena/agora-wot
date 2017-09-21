@@ -20,7 +20,6 @@
 """
 import logging
 import re
-import traceback
 
 from pyparsing import Word, alphas, alphanums, ZeroOrMore, Literal, ParseException
 
@@ -65,7 +64,6 @@ def evaluate_expression(expr, **kwargs):
             return unicode(operators[f](*args, **kwargs))
         except Exception, e:
             log.error(e.message)
-            traceback.print_exc()
 
 
 def find_params(expr):
