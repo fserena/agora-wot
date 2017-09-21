@@ -20,10 +20,12 @@
 """
 import base64
 import copy
-import traceback
+import logging
+import urlparse
 from datetime import datetime
 from email._parseaddr import mktime_tz
 from email.utils import parsedate_tz
+from urllib import quote
 
 import isodate
 import shortuuid
@@ -31,7 +33,6 @@ from agora.collector.http import extract_ttl
 from agora.collector.wrapper import ResourceWrapper
 from agora.engine.fountain import AbstractFountain
 from agora.engine.plan.agp import extend_uri
-from jsonpath_rw import parse
 from pyld import jsonld
 from rdflib import ConjunctiveGraph
 from rdflib import Graph
@@ -42,9 +43,8 @@ from rdflib import XSD
 from rdflib.term import Literal, URIRef, BNode
 
 from agora_wot.blocks import TED, TD
-from agora_wot.ns import CORE
+from agora_wot.path import parse
 from agora_wot.utils import encode_rdict
-import logging
 
 __author__ = 'Fernando Serena'
 
@@ -99,6 +99,14 @@ def path_data(path, data):
             pass
 
     return None
+
+
+def iriToUri(iri):
+    parts = urlparse.urlparse(iri)
+    return urlparse.urlunparse(
+        part.encode('utf-8') if parti == 1 else quote(part.encode('utf-8'))
+        for parti, part in enumerate(parts)
+    )
 
 
 def apply_mappings(data, mappings, ns):
@@ -289,7 +297,7 @@ class Proxy(object):
             for td in self.ecosystem.tds_by_type(ty):
                 try:
                     var_params = set([v.lstrip('$') for v in td.vars])
-                    params = {'$' + v: kwargs[v] for v in var_params}
+                    params = {'$' + v: kwargs[v] for v in var_params if v in kwargs}
                     for seed, t in self.instantiate_seed(td, **params):
                         if t not in seeds:
                             seeds[t] = []
@@ -298,6 +306,8 @@ class Proxy(object):
                     pass
 
             for r in self.ecosystem.resources_by_type(ty):
+                if isinstance(r, TD):
+                    continue
                 t = r.graph.qname(ty)
                 if t not in seeds:
                     seeds[t] = []
@@ -362,6 +372,7 @@ class Proxy(object):
             r_uri = URIRef(r_uri)
 
             bnode_map = {}
+            prefixes = dict(self.__ns.graph.namespaces())
 
             for s, p, o in td.resource.graph:
                 if o in self.__ndict:
@@ -381,6 +392,11 @@ class Proxy(object):
                     if s not in self.__ndict:
                         if s not in bnode_map:
                             bnode_map[s] = BNode()
+
+                        for t in td.resource.graph.objects(s, RDF.type):
+                            for supt in self.fountain.get_type(t.n3(self.__ns))['super']:
+                                g.add((bnode_map[s], RDF.type, extend_uri(supt, prefixes)))
+
                         s = bnode_map[s]
                         g.add((s, p, o))
                 else:
@@ -413,7 +429,9 @@ class Proxy(object):
 
             if td.base:
                 invoked_endpoints = {}
-                for e in sorted(self.compose_endpoints(td), key=lambda x: x.order):
+                endpoints = list(self.compose_endpoints(td))
+                endpoints_order = {am.endpoint: am.order for am in td.access_mappings}
+                for e in sorted(endpoints, key=lambda x: endpoints_order[x]):
                     if str(e.href) not in invoked_endpoints:
                         invoked_endpoints[str(e.href)] = e.invoke(graph=g, subject=r_uri, **resource_args)
                     response = invoked_endpoints[str(e.href)]
@@ -452,6 +470,16 @@ class Proxy(object):
             t_n3 = t
         return t_n3
 
+    def type_sub_tree(self, t, fountain, ns, t_dicts=None):
+        if t_dicts is None:
+            t_dicts = {}
+        if t not in t_dicts:
+            t_n3 = self.n3(t, ns)
+            t_dicts[t_n3] = fountain.get_type(t_n3)
+            for sub in t_dicts[t_n3]['sub']:
+                self.type_sub_tree(sub, fountain, ns, t_dicts=t_dicts)
+        return t_dicts
+
     def enrich(self, uri, data, types, fountain, ns=None, context=None, vars=None, t_dicts=None, p_dicts=None,
                **kwargs):
         # type: (URIRef, dict, list, AbstractFountain) -> dict
@@ -472,9 +500,8 @@ class Proxy(object):
             ns = get_ns(fountain)
 
         for t in types:
-            if t not in t_dicts:
-                t_n3 = self.n3(t, ns)
-                t_dicts[t_n3] = fountain.get_type(t_n3)
+            self.type_sub_tree(t, fountain, ns, t_dicts=t_dicts)
+
         t_matches = {t: reduce(lambda x, y: x + int(y in d['properties']), data, 0) for t, d in
                      t_dicts.items()}
         max_match = max(map(lambda x: t_matches[x], t_matches))
@@ -482,9 +509,15 @@ class Proxy(object):
             return
 
         types = filter(lambda x: t_matches[x] == max_match, t_dicts.keys())
-        common_types = filter(lambda x: not set.intersection(set(t_dicts[x]['super']), types), types)
-        if len(common_types) > 1:
-            return
+        target = kwargs.get('$target', None)
+        if target in types:
+            types = [target]
+        else:
+            common_types = filter(lambda x: not set.intersection(set(t_dicts[x]['super']), types), types)
+            if len(common_types) > 1:
+                return
+            elif len(common_types) == 1:
+                types = common_types
 
         j_types = []
         data['@id'] = uri
@@ -521,20 +554,26 @@ class Proxy(object):
                         data[p_n3] = p_n3_data(key=p_n3, context=context, uri_provider=self.url_for, vars=vars,
                                                **kwargs)
                     elif isinstance(p_n3_data, list):
-                        if all([hasattr(p_item, '__call__') for p_item in p_n3_data]):
-                            p_items_res = []
-                            for p_item in p_n3_data:
+                        p_items_res = []
+                        data[p_n3] = p_items_res
+                        for p_item in p_n3_data:
+                            if hasattr(p_item, '__call__'):
                                 p_items_res.extend(
                                     p_item(key=p_n3, context=context, uri_provider=self.url_for, vars=vars,
                                            **kwargs))
-                            data[p_n3] = p_items_res
-                        elif pdict['type'] != 'data':
-                            data[p_n3] = []
-                            for s_p_n3_data in p_n3_data:
-                                sub = self.enrich(BNode(shortuuid.uuid()).n3(ns), s_p_n3_data, pdict['range'], fountain,
-                                                  ns=ns, t_dicts=t_dicts, p_dicts=p_dicts,
-                                                  context=context, vars=vars, **kwargs)
-                                if sub:
-                                    data[p_n3].append(sub['@graph'])
+                            elif pdict['type'] != 'data':
+                                if isinstance(p_item, basestring):
+                                    p_items_res.append(URIRef(iriToUri(p_item)))
+                                else:
+                                    sub = self.enrich(BNode(shortuuid.uuid()).n3(ns), p_item, pdict['range'],
+                                                      fountain,
+                                                      ns=ns, t_dicts=t_dicts, p_dicts=p_dicts,
+                                                      context=context, vars=vars, **kwargs)
+                                    if sub:
+                                        p_items_res.append(sub['@graph'])
+                            else:
+                                p_items_res.append(p_item)
+                    elif pdict['type'] == 'object':
+                        data[p_n3] = URIRef(iriToUri(p_n3_data))
 
         return {'@context': context, '@graph': data}
