@@ -1,9 +1,10 @@
 agora-py
 rdflib
+SPARQLWrapper
 requests
 python-dateutil
 pyld
 rdflib-jsonld
-jsonpath-rw
+jsonpath-ng
 shortuuid
 networkx
