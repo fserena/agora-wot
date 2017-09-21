@@ -78,10 +78,10 @@ class Gateway(object):
 
         return self.scholars[scholar_id]
 
-    def query(self, query, stop=None, **kwargs):
+    def query(self, query, stop_event=None, **kwargs):
         if self.interceptor:
             kwargs = self.interceptor(**kwargs)
-        return self.agora.query(query, stop=stop, collector=self._scholar(**kwargs))
+        return self.agora.query(query, stop_event=stop_event, collector=self._scholar(**kwargs))
 
     def fragment(self, query, **kwargs):
         if self.interceptor:
