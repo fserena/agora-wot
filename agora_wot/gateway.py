@@ -91,8 +91,10 @@ class Gateway(object):
     def shutdown(self):
         for scholar in self.scholars.values():
             try:
-                scholar.index.clear()
                 scholar.shutdown()
+                # scholar.index.shutdown()
+                # scholar.index.clear()
+                
             except Exception as e:
                 print e.message
 
