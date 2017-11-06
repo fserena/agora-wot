@@ -179,7 +179,7 @@ class TD(object):
         if graph is None:
             graph = bound_graph()
         if node is None:
-            node = self.node
+            node = td_nodes.get(self, BNode()) if td_nodes else (self.node or BNode())
 
         resource_node = self.resource.node
         if th_nodes:
@@ -397,7 +397,7 @@ class AccessMapping(object):
 
         graph.add((node, RDF.type, MAP.AccessMapping))
 
-        e_node = BNode()
+        e_node = self.endpoint.node or BNode()
         graph.add((node, MAP.mapsResourcesFrom, e_node))
         self.endpoint.to_graph(graph=graph, node=e_node)
 
@@ -465,15 +465,18 @@ class Endpoint(object):
         self.whref = whref
         self.media = media or 'application/json'
         self.intercept = intercept
+        self.node = None
         self.response_headers = response_headers
 
     @staticmethod
     def from_graph(graph, node, node_map):
         # type: (Graph, Node) -> iter
+
         if node in node_map:
             return node_map[node]
 
         endpoint = Endpoint()
+        endpoint.node = node
         try:
             endpoint.media = list(graph.objects(node, WOT.mediaType)).pop()
         except IndexError:
@@ -492,7 +495,7 @@ class Endpoint(object):
         if graph is None:
             graph = bound_graph()
         if node is None:
-            node = BNode()
+            node = self.node or BNode()
 
         graph.add((node, RDF.type, WOT.Endpoint))
         if self.href:
@@ -799,7 +802,7 @@ class TED(object):
 
         eco_node = BNode()
         self.ecosystem.to_graph(graph=graph, node=eco_node, td_nodes=td_nodes, th_nodes=th_nodes)
-        graph.add((node, RDF.type, CORE.TED))
+        graph.add((node, RDF.type, CORE.ThingEcosystemDescription))
         graph.add((node, CORE.describes, eco_node))
 
         if td_nodes:
@@ -811,6 +814,10 @@ class TED(object):
     @property
     def ecosystem(self):
         return self.__ecosystem
+
+    @ecosystem.setter
+    def ecosystem(self, eco):
+        self.__ecosystem = eco
 
 
 class Ecosystem(object):
@@ -862,7 +869,7 @@ class Ecosystem(object):
         for td_node, r_node in graph.subject_objects(predicate=CORE.describes):
             if (td_node, RDF.type, CORE.ThingDescription) in graph and r_node not in root_nodes:
                 td = TD.from_graph(graph, td_node, node_map=node_block_map)
-                eco.__tds.add(td)
+                eco.add_td(td)
                 eco.__resources.add(td.resource)
                 td_nodes_dict[r_node] = td
 
@@ -916,18 +923,37 @@ class Ecosystem(object):
                     yielded.append(e)
                     yield e
 
+    def __remove_td_by_id(self, td):
+        for prev_td in filter(lambda atd: atd.id == td.id, self.__tds):
+            self.__tds.remove(prev_td)
+            if prev_td in self.__root_tds:
+                self.__root_tds.remove(prev_td)
+            if prev_td in self.__roots:
+                self.__roots.remove(prev_td)
+            self.__resources.remove(prev_td.resource)
+
     def add_component_from_td(self, td):
         # type: (TD) -> None
-        self.__tds.add(td)
+        if td not in self.__tds:
+            self.__remove_td_by_id(td)
+            self.__tds.add(td)
+            self.__resources.add(td.resource)
+            self.network()
         self.__root_tds.add(td)
         self.__roots.add(td)
-        self.__resources.add(td.resource)
-        self.network()
 
     def add_component(self, resource):
         # type: (Resource) -> None
         self.__roots.add(resource)
         self.__resources.add(resource)
+
+    def add_td(self, td):
+        # type: (TD) -> None
+        if td not in self.__tds:
+            self.__remove_td_by_id(td)
+            self.__tds.add(td)
+            self.__resources.add(td.resource)
+            self.network()
 
     @property
     def roots(self):
@@ -955,7 +981,7 @@ class Ecosystem(object):
                 network.add_edge(td.id, child_td.id)
 
         for ch in children:
-            self.__tds.add(ch)
+            self.add_td(ch)
 
         return network
 
