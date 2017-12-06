@@ -8,3 +8,4 @@ rdflib-jsonld
 jsonpath-ng
 shortuuid
 networkx
+gunicorn

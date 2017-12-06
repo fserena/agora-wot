@@ -3,7 +3,7 @@
   Ontology Engineering Group
         http://www.oeg-upm.net/
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2016 Ontology Engineering Group.
+  Copyright (C) 2017 Ontology Engineering Group.
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -18,8 +18,5 @@
   limitations under the License.
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 """
-
-from agora_wot.blocks import TED
-from agora_wot.proxy import Proxy
 
 __author__ = 'Fernando Serena'

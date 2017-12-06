@@ -3,7 +3,7 @@
   Ontology Engineering Group
         http://www.oeg-upm.net/
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2016 Ontology Engineering Group.
+  Copyright (C) 2017 Ontology Engineering Group.
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import re
 
 from pyparsing import Word, alphas, alphanums, ZeroOrMore, Literal, ParseException
 
-from agora_wot.operators import lslug, objectValue
+from agora_wot.blocks.operators import lslug, objectValue
 
 __author__ = 'Fernando Serena'
 

@@ -3,7 +3,7 @@
   Ontology Engineering Group
         http://www.oeg-upm.net/
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2016 Ontology Engineering Group.
+  Copyright (C) 2017 Ontology Engineering Group.
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 import base64
 import copy
 import logging
+import traceback
 import urlparse
 from datetime import datetime
 from email._parseaddr import mktime_tz
@@ -33,6 +34,7 @@ from agora.collector.http import extract_ttl
 from agora.collector.wrapper import ResourceWrapper
 from agora.engine.fountain import AbstractFountain
 from agora.engine.plan.agp import extend_uri
+from agora.engine.utils import Wrapper
 from pyld import jsonld
 from rdflib import ConjunctiveGraph
 from rdflib import Graph
@@ -42,9 +44,10 @@ from rdflib import RDFS
 from rdflib import XSD
 from rdflib.term import Literal, URIRef, BNode
 
-from agora_wot.blocks import TED, TD
-from agora_wot.path import parse
-from agora_wot.utils import encode_rdict
+from agora_wot.blocks.td import TD
+from agora_wot.blocks.ted import TED
+from agora_wot.blocks.utils import encode_rdict
+from agora_wot.gateway.path import parse
 
 __author__ = 'Fernando Serena'
 
@@ -186,8 +189,13 @@ def ld_triples(ld, g=None):
     bid_map = {}
 
     def parse_term(term):
+        try:
+            term['value'] = term['value'].decode('unicode-escape')
+        except UnicodeEncodeError:
+            pass
+
         if term['type'] == 'IRI':
-            return URIRef(term['value'])
+            return URIRef(u'{}'.format(term['value']))
         elif term['type'] == 'literal':
             datatype = URIRef(term.get('datatype', None))
             if datatype == XSD.dateTime:
@@ -218,10 +226,10 @@ def ld_triples(ld, g=None):
     norm = jsonld.normalize(ld)
     def_graph = norm.get('@default', [])
     for triple in def_graph:
-        subject = parse_term(triple['subject'])
         predicate = parse_term(triple['predicate'])
         if not predicate.startswith('http'):
             continue
+        subject = parse_term(triple['subject'])
         object = parse_term(triple['object'])
         g.add((subject, predicate, object))
 
@@ -233,7 +241,6 @@ class Proxy(object):
         # type: (TED) -> None
         self.__ted = ted
         self.__fountain = fountain
-        self.__ns = get_ns(self.__fountain)
         self.__seeds = set([])
         self.__wrapper = ResourceWrapper(server_name=server_name, url_scheme=url_scheme, server_port=server_port,
                                          path=path)
@@ -244,6 +251,8 @@ class Proxy(object):
         self.__wrapper.intercept('{}/<tid>/<b64>'.format(path))(self.describe_resource)
         self.__network = self.__ted.ecosystem.network()
         self.__interceptor = None
+
+        ns = get_ns(self.__fountain)
 
         for root in ted.ecosystem.roots:
             if isinstance(root, TD):
@@ -256,13 +265,13 @@ class Proxy(object):
                 resource = root
 
             for t in resource.types:
-                self.__seeds.add((uri, t.n3(self.__ns)))
+                self.__seeds.add((uri, t.n3(ns)))
 
-    def instantiate_seed(self, root, **kwargs):
+    def instantiate_seed(self, root, ns, **kwargs):
         if root in self.__ted.ecosystem.roots:
             uri = URIRef(self.url_for(root.id, **kwargs))
             for t in root.resource.types:
-                t_n3 = t.n3(self.__ns)
+                t_n3 = t.n3(ns)
                 self.__seeds.add((uri, t_n3))
                 yield uri, t_n3
 
@@ -287,21 +296,38 @@ class Proxy(object):
     def process_arguments(self, **kwargs):
         return {k: v.pop() if isinstance(v, list) else v for k, v in kwargs.items()}
 
+    def __remove_type_redundancy(self, fountain, types, ns):
+        known_types = fountain.types
+        n3_types = {t.n3(ns): t for t in types}
+        n3_filtered = filter(
+            lambda t: t in known_types and not set.intersection(set(fountain.get_type(t)['sub']),
+                                                                n3_types.keys()),
+            n3_types.keys())
+        return map(lambda t: n3_types.get(t), n3_filtered)
+
     def instantiate_seeds(self, **kwargs):
         seeds = {}
         kwargs = self.process_arguments(**kwargs)
         if self.interceptor:
             kwargs = self.interceptor(**kwargs)
 
-        for ty in self.ecosystem.root_types:
+        fountain = self.fountain
+        ns = get_ns(fountain)
+
+        root_types = reduce(lambda x, y: x.union(self.__remove_type_redundancy(fountain, y.types, ns)),
+                            self.ecosystem.root_resources,
+                            set())
+        n3_root_types = {t.n3(ns): t for t in root_types}
+        for ty in root_types:
             for td in self.ecosystem.tds_by_type(ty):
                 try:
                     var_params = set([v.lstrip('$') for v in td.vars])
                     params = {'$' + v: kwargs[v] for v in var_params if v in kwargs}
-                    for seed, t in self.instantiate_seed(td, **params):
-                        if t not in seeds:
-                            seeds[t] = []
-                        seeds[t].append(seed)
+                    for seed, t in self.instantiate_seed(td, ns, **params):
+                        if t in n3_root_types:
+                            if t not in seeds:
+                                seeds[t] = []
+                            seeds[t].append(seed)
                 except KeyError:
                     pass
 
@@ -309,14 +335,23 @@ class Proxy(object):
                 if isinstance(r, TD):
                     continue
                 t = r.graph.qname(ty)
-                if t not in seeds:
-                    seeds[t] = []
-                seeds[t].append(r.node)
+                if t in n3_root_types:
+                    if t not in seeds:
+                        seeds[t] = []
+                    seeds[t].append(r.node)
         return seeds
 
     @property
     def fountain(self):
-        return self.__fountain
+        return Wrapper(self.__fountain)
+
+    @property
+    def namespace_manager(self):
+        prefixes = self.fountain.prefixes
+        g = Graph()
+        for prefix, uri in prefixes.items():
+            g.bind(prefix, uri)
+        return g.namespace_manager
 
     @property
     def ecosystem(self):
@@ -356,9 +391,14 @@ class Proxy(object):
     def describe_resource(self, tid, b64=None, **kwargs):
         td = self.__rdict[tid]
         g = ConjunctiveGraph()
-        prefixes = self.__fountain.prefixes
-        for prefix, ns in prefixes.items():
-            g.bind(prefix, ns)
+
+        fountain = self.fountain
+        ns = get_ns(fountain)
+
+        prefixes = fountain.prefixes
+        for prefix, uri in prefixes.items():
+            g.bind(prefix, uri)
+
         ttl = 100000
         try:
             if b64 is not None:
@@ -372,7 +412,6 @@ class Proxy(object):
             r_uri = URIRef(r_uri)
 
             bnode_map = {}
-            prefixes = dict(self.__ns.graph.namespaces())
 
             for s, p, o in td.resource.graph:
                 if o in self.__ndict:
@@ -394,7 +433,7 @@ class Proxy(object):
                             bnode_map[s] = BNode()
 
                         for t in td.resource.graph.objects(s, RDF.type):
-                            for supt in self.fountain.get_type(t.n3(self.__ns))['super']:
+                            for supt in fountain.get_type(t.n3(ns))['super']:
                                 g.add((bnode_map[s], RDF.type, extend_uri(supt, prefixes)))
 
                         s = bnode_map[s]
@@ -405,10 +444,10 @@ class Proxy(object):
             resource_props = set([])
             for t in td.resource.types:
                 if isinstance(t, URIRef):
-                    t_n3 = t.n3(self.__ns)
+                    t_n3 = t.n3(ns)
                 else:
                     t_n3 = t
-                type_dict = self.__fountain.get_type(t_n3)
+                type_dict = fountain.get_type(t_n3)
                 resource_props.update(type_dict['properties'])
                 for st in type_dict['super']:
                     g.add((r_uri, RDF.type, extend_uri(st, prefixes)))
@@ -420,7 +459,7 @@ class Proxy(object):
                     same_as_g = Graph()
                     same_as_g.load(source=uri)
                     for s, p, o in same_as_g:
-                        if p.n3(self.__ns) in resource_props:
+                        if p.n3(ns) in resource_props:
                             if s == uri:
                                 s = r_uri
                             elif not isinstance(s, BNode):
@@ -438,13 +477,14 @@ class Proxy(object):
                     if response.status_code == 200:
                         data = response.json()
                         e_mappings = td.endpoint_mappings(e)
-                        mapped_data = apply_mappings(data, e_mappings, self.__ns)
+                        mapped_data = apply_mappings(data, e_mappings, ns)
                         ld = self.enrich(r_uri, mapped_data, td.resource.types,
-                                         self.__fountain, ns=self.__ns, vars=td.vars, **resource_args)
+                                         fountain, ns=ns, vars=td.vars, **resource_args)
                         ld_triples(ld, g)
                         ttl = min(ttl, extract_ttl(response.headers) or ttl)
 
         except Exception as e:
+            traceback.print_exc()
             log.warn(e.message)
         return g, {'Cache-Control': 'max-age={}'.format(ttl)}
 
@@ -453,8 +493,8 @@ class Proxy(object):
         for root in self.ecosystem.roots:
             resource = root.resource if isinstance(root, TD) else root
             for t in resource.types:
-                t_n3 = t.n3(self.__fountain.schema.graph.namespace_manager)
-                self.__fountain.delete_type_seeds(t_n3)
+                t_n3 = t.n3(self.namespace_manager)
+                self.fountain.delete_type_seeds(t_n3)
 
     def url_for(self, tid, b64=None, **kwargs):
         if tid in self.__ndict:
@@ -482,7 +522,7 @@ class Proxy(object):
 
     def enrich(self, uri, data, types, fountain, ns=None, context=None, vars=None, t_dicts=None, p_dicts=None,
                **kwargs):
-        # type: (URIRef, dict, list, AbstractFountain) -> dict
+        # type: (URIRef, dict, list, AbstractFountain) -> any
 
         if context is None:
             context = {}
@@ -504,7 +544,7 @@ class Proxy(object):
 
         t_matches = {t: reduce(lambda x, y: x + int(y in d['properties']), data, 0) for t, d in
                      t_dicts.items()}
-        max_match = max(map(lambda x: t_matches[x], t_matches))
+        max_match = max(map(lambda x: t_matches[x], t_matches)) if t_matches else 0
         if not max_match and len(types) > 1:
             return
 
@@ -535,7 +575,8 @@ class Proxy(object):
                         p_dicts[p_n3] = fountain.get_property(p_n3)
                     pdict = p_dicts[p_n3]
                     if pdict['type'] == 'data':
-                        range = pdict['range'][0]
+                        # return default data type (string) when not defined
+                        range = pdict['range'][0] if pdict['range'] else 'xsd:string'
                         if range == 'rdfs:Resource':
                             datatype = Literal(data[p_n3]).datatype
                         else:
@@ -574,6 +615,14 @@ class Proxy(object):
                             else:
                                 p_items_res.append(p_item)
                     elif pdict['type'] == 'object':
-                        data[p_n3] = URIRef(iriToUri(p_n3_data))
+                        try:
+                            data[p_n3] = URIRef(iriToUri(p_n3_data))
+                        except AttributeError:
+                            if 'rdfs:Resource' in pdict['range']:
+                                datatype = Literal(data[p_n3]).datatype
+                            else:
+                                range = pdict['range'][0] if pdict['range'] else 'xsd:string'
+                                datatype = extend_uri(range, prefixes)
+                            context[p_n3] = {'@type': datatype, '@id': p}
 
         return {'@context': context, '@graph': data}

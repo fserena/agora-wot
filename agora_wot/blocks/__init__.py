@@ -3,7 +3,7 @@
   Ontology Engineering Group
         http://www.oeg-upm.net/
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2016 Ontology Engineering Group.
+  Copyright (C) 2017 Ontology Engineering Group.
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -18,19 +18,5 @@
   limitations under the License.
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 """
-from urlparse import urlparse
-
-from rdflib import URIRef
-
-from agora.engine.plan.agp import extend_uri
 
 __author__ = 'Fernando Serena'
-
-
-def lslug(url, **kwargs):
-    return urlparse(url, allow_fragments=True).path.split('/')[-1]
-
-
-def objectValue(pred_str, graph, subject):
-    pred_uri = URIRef(extend_uri(pred_str, dict(graph.namespaces())))
-    return list(graph.objects(subject, pred_uri)).pop().toPython()

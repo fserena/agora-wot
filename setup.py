@@ -3,7 +3,7 @@
   Ontology Engineering Group
         http://www.oeg-upm.net/
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2016 Ontology Engineering Group.
+  Copyright (C) 2017 Ontology Engineering Group.
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ setup(
     download_url="https://github.com/fserena/agora-wot/tarball/{}".format(metadata['version']),
     packages=find_packages(exclude=['ez_setup', 'examples', 'tests']),
     install_requires=['agora-py', 'requests', 'SPARQLWrapper', 'rdflib==4.2.1', 'python-dateutil', 'pyld',
-                      'rdflib-jsonld', 'networkx', 'shortuuid', 'jsonpath-ng'],
+                      'rdflib-jsonld', 'networkx', 'shortuuid', 'jsonpath-ng', 'gunicorn'],
     classifiers=[],
     package_dir={'agora_wot': 'agora_wot'},
     package_data={'agora_wot': ['metadata.json']},
