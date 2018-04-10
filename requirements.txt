@@ -6,6 +6,7 @@ python-dateutil
 pyld
 rdflib-jsonld
 jsonpath-ng
+jsonpath-rw
 shortuuid
 networkx
 gunicorn

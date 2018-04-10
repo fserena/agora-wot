@@ -40,7 +40,7 @@ setup(
     download_url="https://github.com/fserena/agora-wot/tarball/{}".format(metadata['version']),
     packages=find_packages(exclude=['ez_setup', 'examples', 'tests']),
     install_requires=['agora-py', 'requests', 'SPARQLWrapper', 'rdflib==4.2.1', 'python-dateutil', 'pyld',
-                      'rdflib-jsonld', 'networkx', 'shortuuid', 'jsonpath-ng', 'gunicorn'],
+                      'rdflib-jsonld', 'networkx', 'shortuuid', 'jsonpath-rw', 'jsonpath-ng', 'gunicorn'],
     classifiers=[],
     package_dir={'agora_wot': 'agora_wot'},
     package_data={'agora_wot': ['metadata.json']},

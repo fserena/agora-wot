@@ -296,6 +296,18 @@ class Ecosystem(object):
         for ch in children:
             self.add_td(ch)
 
+        td_id_map = {td.id: td for td in self.__tds}
+
+        for td in self.__tds:
+            try:
+                suc_td_ids = reduce(lambda x, y: x.union(set(y)), nx.dfs_successors(network, td.id).values(), set())
+                suc_tds = map(lambda id: td_id_map[id], suc_td_ids)
+                for std in suc_tds:
+                    for var in std.vars:
+                        td.vars.add(var)
+            except KeyError:
+                pass
+
         return network
 
     def tds_by_type(self, t):

@@ -32,6 +32,8 @@ from agora_wot.blocks.resource import Resource
 from agora_wot.blocks.utils import bound_graph, encode_rdict
 from agora_wot.ns import CORE, MAP
 
+import traceback
+
 __author__ = 'Fernando Serena'
 
 
@@ -78,13 +80,18 @@ class TD(object):
         except (IndexError, ValueError):
             pass
 
-        for mr_node in graph.objects(node, MAP.hasAccessMapping):
-            mr = AccessMapping.from_graph(graph, mr_node, node_map=node_map)
-            td.add_access_mapping(mr)
-
         for ext_td in td.__td_ext:
             for am in ext_td.access_mappings:
                 td.add_access_mapping(am, own=False)
+
+        for mr_node in graph.objects(node, MAP.hasAccessMapping):
+            try:
+                mr = AccessMapping.from_graph(graph, mr_node, node_map=node_map)
+                td.add_access_mapping(mr)
+            except Exception as e:
+                traceback.print_exc()
+                print e.message
+
 
         for rs_node in graph.objects(node, MAP.fromRDFSource):
             rdf_source = RDFSource.from_graph(graph, rs_node, node_map=node_map)
@@ -251,7 +258,11 @@ class AccessMapping(object):
         if node in node_map:
             return node_map[node]
 
-        e_node = list(graph.objects(node, MAP.mapsResourcesFrom)).pop()
+        try:
+            e_node = list(graph.objects(node, MAP.mapsResourcesFrom)).pop()
+        except IndexError:
+            pass
+
         endpoint = Endpoint.from_graph(graph, e_node, node_map=node_map)
 
         am = AccessMapping(endpoint)
