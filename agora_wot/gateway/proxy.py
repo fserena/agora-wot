@@ -223,6 +223,12 @@ def ld_triples(ld, g=None):
 
     if g is None:
         g = Graph()
+        if '@context' in ld:
+            for ns in filter(
+                    lambda k: ':' not in k and isinstance(ld['@context'][k], basestring) and ld['@context'][
+                        k].startswith('http'), ld['@context']):
+                g.bind(ns, URIRef(ld['@context'].get(ns)))
+
     norm = jsonld.normalize(ld)
     def_graph = norm.get('@default', [])
     for triple in def_graph:
@@ -415,7 +421,7 @@ class Proxy(object):
 
             for s, p, o in td.resource.graph:
                 if o in self.__ndict:
-                    o = URIRef(self.url_for(tid=self.__ndict[o], b64=b64))
+                    o = URIRef(self.url_for(tid=self.__ndict[o], b64=b64, **resource_args))
                 elif isinstance(o, BNode):
                     if o not in bnode_map:
                         bnode_map[o] = BNode()
@@ -499,8 +505,12 @@ class Proxy(object):
     def url_for(self, tid, b64=None, **kwargs):
         if tid in self.__ndict:
             tid = self.__ndict[tid]
-        if b64 is None and kwargs:
-            b64 = encode_rdict(kwargs)
+        # if b64 is None and kwargs:
+        if kwargs:
+            var_dict = {}
+            for var in filter(lambda x: x in kwargs, self.__rdict[tid].vars):
+                var_dict[var] = kwargs[var]
+            b64 = encode_rdict(var_dict)
         return self.__wrapper.url_for('describe_resource', tid=tid, b64=b64)
 
     def n3(self, t, ns):
