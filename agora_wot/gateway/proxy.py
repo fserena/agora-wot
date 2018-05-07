@@ -229,15 +229,18 @@ def ld_triples(ld, g=None):
                         k].startswith('http'), ld['@context']):
                 g.bind(ns, URIRef(ld['@context'].get(ns)))
 
-    norm = jsonld.normalize(ld)
-    def_graph = norm.get('@default', [])
-    for triple in def_graph:
-        predicate = parse_term(triple['predicate'])
-        if not predicate.startswith('http'):
-            continue
-        subject = parse_term(triple['subject'])
-        object = parse_term(triple['object'])
-        g.add((subject, predicate, object))
+    if ld:
+        norm = jsonld.normalize(ld)
+        def_graph = norm.get('@default', [])
+        for triple in def_graph:
+            predicate = parse_term(triple['predicate'])
+            if not predicate.startswith('http'):
+                continue
+            subject = parse_term(triple['subject'])
+            object = parse_term(triple['object'])
+            g.add((subject, predicate, object))
+    else:
+        print ld
 
     return g
 
@@ -329,6 +332,10 @@ class Proxy(object):
                 try:
                     var_params = set([v.lstrip('$') for v in td.vars])
                     params = {'$' + v: kwargs[v] for v in var_params if v in kwargs}
+
+                    if var_params and not params:
+                        continue
+
                     for seed, t in self.instantiate_seed(td, ns, **params):
                         if t in n3_root_types:
                             if t not in seeds:
@@ -338,9 +345,7 @@ class Proxy(object):
                     pass
 
             for r in self.ecosystem.resources_by_type(ty):
-                if isinstance(r, TD):
-                    continue
-                t = r.graph.qname(ty)
+                t = ty.n3(ns)
                 if t in n3_root_types:
                     if t not in seeds:
                         seeds[t] = []
@@ -478,7 +483,12 @@ class Proxy(object):
                 endpoints_order = {am.endpoint: am.order for am in td.access_mappings}
                 for e in sorted(endpoints, key=lambda x: endpoints_order[x]):
                     if str(e.href) not in invoked_endpoints:
-                        invoked_endpoints[str(e.href)] = e.invoke(graph=g, subject=r_uri, **resource_args)
+                        try:
+                            invoked_endpoints[str(e.href)] = e.invoke(graph=g, subject=r_uri, **resource_args)
+                        except AttributeError as e:
+                            log.debug('Missing attributes:' + e.message)
+                            continue
+
                     response = invoked_endpoints[str(e.href)]
                     if response.status_code == 200:
                         data = response.json()
@@ -490,8 +500,8 @@ class Proxy(object):
                         ttl = min(ttl, extract_ttl(response.headers) or ttl)
 
         except Exception as e:
-            traceback.print_exc()
-            log.warn(e.message)
+            # traceback.print_exc()
+            log.warn(r_uri + ': {}'.format(e.message))
         return g, {'Cache-Control': 'max-age={}'.format(ttl)}
 
     def clear_seeds(self):
@@ -556,9 +566,14 @@ class Proxy(object):
                      t_dicts.items()}
         max_match = max(map(lambda x: t_matches[x], t_matches)) if t_matches else 0
         if not max_match and len(types) > 1:
-            return
+            q_types = map(lambda t: t.n3(ns), types)
+            types = filter(lambda x: not set.intersection(set(t_dicts[x]['sub']), q_types), q_types)
+            if not types:
+                return
+            max_match = 1
+        else:
+            types = filter(lambda x: t_matches[x] == max_match, t_dicts.keys())
 
-        types = filter(lambda x: t_matches[x] == max_match, t_dicts.keys())
         target = kwargs.get('$target', None)
         if target in types:
             types = [target]

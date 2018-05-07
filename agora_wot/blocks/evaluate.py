@@ -63,7 +63,7 @@ def evaluate_expression(expr, **kwargs):
         try:
             return unicode(operators[f](*args, **kwargs))
         except Exception, e:
-            log.error(e.message)
+            raise AttributeError(expr)
 
 
 def find_params(expr):

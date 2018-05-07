@@ -116,7 +116,7 @@ class Ecosystem(object):
         self.node = BNode()
 
     @staticmethod
-    def from_graph(graph, loader=None):
+    def from_graph(graph, loader=None, **kwargs):
         eco = Ecosystem()
 
         try:
@@ -147,7 +147,7 @@ class Ecosystem(object):
         for r_node in root_nodes:
             try:
                 td_node = list(graph.subjects(predicate=CORE.describes, object=r_node)).pop()
-                td = TD.from_graph(graph, td_node, node_map=node_block_map)
+                td = TD.from_graph(graph, td_node, node_map=node_block_map, **kwargs)
                 eco.add_root_from_td(td)
                 td_nodes_dict[r_node] = td
             except IndexError:
@@ -156,7 +156,7 @@ class Ecosystem(object):
 
         for td_node, r_node in graph.subject_objects(predicate=CORE.describes):
             if (td_node, RDF.type, CORE.ThingDescription) in graph and r_node not in root_nodes:
-                td = TD.from_graph(graph, td_node, node_map=node_block_map)
+                td = TD.from_graph(graph, td_node, node_map=node_block_map, **kwargs)
                 eco.add_td(td)
                 eco.__resources.add(td.resource)
                 td_nodes_dict[r_node] = td
@@ -168,7 +168,7 @@ class Ecosystem(object):
 
         return eco
 
-    def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None, abstract=False):
+    def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None, abstract=False, **kwargs):
         if node is None:
             node = self.node or BNode()
         if graph is None:
@@ -190,12 +190,12 @@ class Ecosystem(object):
             if not abstract:
                 td_node = td_nodes.get(td, None) if td_nodes else None
                 for ext in td.extends:
-                    ext.to_graph(graph=graph, node=ext.node, td_nodes=td_nodes, th_nodes=th_nodes)
-                td.to_graph(graph=graph, node=td_node, td_nodes=td_nodes, th_nodes=th_nodes)
+                    ext.to_graph(graph=graph, node=ext.node, td_nodes=td_nodes, th_nodes=th_nodes, **kwargs)
+                td.to_graph(graph=graph, node=td_node, td_nodes=td_nodes, th_nodes=th_nodes, **kwargs)
 
         for root in filter(lambda x: not isinstance(x, TD), self.roots):
             graph.add((node, CORE.hasComponent, root.node))
-            root.to_graph(graph)
+            root.to_graph(graph, **kwargs)
 
         return graph
 
@@ -240,14 +240,15 @@ class Ecosystem(object):
             self.__roots.add(root)
             self.__resources.add(root)
 
-    def add_td(self, td):
+    def add_td(self, td, update_network=True):
         # type: (TD) -> None
         if td not in self.__tds:
             self.__remove_td_by_id(td)
             self.__tds.add(td)
             self.__resources.add(td.resource)
             self.__node_td_map[td.resource.node] = td
-            self.network()
+            if update_network:
+                self.network()
 
     @property
     def roots(self):
@@ -294,7 +295,7 @@ class Ecosystem(object):
                     network.add_edge(td.id, child_td.id)
 
         for ch in children:
-            self.add_td(ch)
+            self.add_td(ch, update_network=False)
 
         td_id_map = {td.id: td for td in self.__tds}
 
@@ -318,6 +319,8 @@ class Ecosystem(object):
     def resources_by_type(self, t):
         try:
             for r in filter(lambda x: isinstance(x.node, URIRef), self.__roots):
-                yield r
+                if not isinstance(r, TD):
+                    if t in r.types:
+                        yield r
         except Exception:
             pass

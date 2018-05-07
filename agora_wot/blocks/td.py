@@ -50,7 +50,7 @@ class TD(object):
         self.__td_ext = set()
 
     @staticmethod
-    def from_graph(graph, node, node_map):
+    def from_graph(graph, node, node_map, **kwargs):
         if node in node_map:
             return node_map[node]
 
@@ -59,7 +59,7 @@ class TD(object):
         except IndexError:
             raise ValueError
 
-        resource = Resource.from_graph(graph, r_node, node_map=node_map)
+        resource = Resource.from_graph(graph, r_node, node_map=node_map, **kwargs)
 
         td = TD(resource)
         td.__node = node
@@ -75,7 +75,7 @@ class TD(object):
                 if ext in node_map:
                     ext_td = node_map[ext]
                 else:
-                    ext_td = TD.from_graph(graph, ext, node_map)
+                    ext_td = TD.from_graph(graph, ext, node_map, **kwargs)
                 td.__td_ext.add(ext_td)
         except (IndexError, ValueError):
             pass
@@ -86,12 +86,11 @@ class TD(object):
 
         for mr_node in graph.objects(node, MAP.hasAccessMapping):
             try:
-                mr = AccessMapping.from_graph(graph, mr_node, node_map=node_map)
+                mr = AccessMapping.from_graph(graph, mr_node, node_map=node_map, **kwargs)
                 td.add_access_mapping(mr)
             except Exception as e:
                 traceback.print_exc()
                 print e.message
-
 
         for rs_node in graph.objects(node, MAP.fromRDFSource):
             rdf_source = RDFSource.from_graph(graph, rs_node, node_map=node_map)
@@ -99,7 +98,7 @@ class TD(object):
 
         return td
 
-    def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None, abstract=False):
+    def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None, abstract=False, **kwargs):
         if node is None:
             node = td_nodes.get(self, BNode()) if td_nodes else (self.node or BNode())
 
@@ -128,7 +127,7 @@ class TD(object):
                 else:
                     am_node = BNode()
                 graph.add((node, MAP.hasAccessMapping, am_node))
-                am.to_graph(graph=graph, node=am_node, td_nodes=td_nodes)
+                am.to_graph(graph=graph, node=am_node, td_nodes=td_nodes, **kwargs)
 
             for rdfs in self.rdf_sources:
                 if td_nodes:
@@ -142,7 +141,7 @@ class TD(object):
 
             r_node = self.resource.node
             if not (th_nodes is None or r_node in th_nodes):
-                r_graph = self.resource.to_graph()
+                r_graph = self.resource.to_graph(**kwargs)
                 for s, p, o in r_graph:
                     ss = th_nodes.get(s, s) if th_nodes else s
                     oo = th_nodes.get(o, o) if th_nodes else o
@@ -253,7 +252,7 @@ class AccessMapping(object):
                 self.__vars.update(m.transform.td.vars)
 
     @staticmethod
-    def from_graph(graph, node, node_map):
+    def from_graph(graph, node, node_map, **kwargs):
         # type: (Graph, Node) -> iter
         if node in node_map:
             return node_map[node]
@@ -269,7 +268,7 @@ class AccessMapping(object):
 
         try:
             for m in graph.objects(node, MAP.hasMapping):
-                am.mappings.add(Mapping.from_graph(graph, m, node_map=node_map))
+                am.mappings.add(Mapping.from_graph(graph, m, node_map=node_map, **kwargs))
                 am.__find_vars()
         except IndexError:
             pass
@@ -282,7 +281,7 @@ class AccessMapping(object):
         node_map[node] = am
         return am
 
-    def to_graph(self, graph=None, node=None, td_nodes=None):
+    def to_graph(self, graph=None, node=None, td_nodes=None, **kwargs):
         if node is None:
             node = BNode()
         if graph is None:
@@ -310,7 +309,7 @@ class AccessMapping(object):
                 m_node = td_nodes[m]
             else:
                 m_node = BNode()
-            m.to_graph(graph=graph, node=m_node, td_nodes=td_nodes)
+            m.to_graph(graph=graph, node=m_node, td_nodes=td_nodes, **kwargs)
             graph.add((node, MAP.hasMapping, m_node))
 
         if self.__order is not None:
@@ -350,7 +349,7 @@ class Mapping(object):
         self.target_datatype = target_datatype
 
     @staticmethod
-    def from_graph(graph, node, node_map):
+    def from_graph(graph, node, node_map, **kwargs):
         if node in node_map:
             return node_map[node]
 
@@ -382,14 +381,15 @@ class Mapping(object):
 
         try:
             mapping.transform = create_transform(graph, list(graph.objects(node, MAP.valuesTransformedBy)).pop(),
-                                                 node_map, target=mapping.target_class or mapping.target_datatype)
+                                                 node_map, target=mapping.target_class or mapping.target_datatype,
+                                                 **kwargs)
         except IndexError:
             pass
 
         node_map[node] = mapping
         return mapping
 
-    def to_graph(self, graph=None, node=None, td_nodes=None):
+    def to_graph(self, graph=None, node=None, td_nodes=None, **kwargs):
         if node is None:
             node = BNode()
         if graph is None:
@@ -410,10 +410,12 @@ class Mapping(object):
             graph.add((node, MAP.targetDatatype, URIRef(self.target_datatype)))
         if self.transform:
             if isinstance(self.transform, ResourceTransform):
-                transform_node = td_nodes.get(self.transform.td, None) if td_nodes else None
+                transform_node = td_nodes.get(self.transform.td, None) if td_nodes else self.transform.td.node
+            elif isinstance(self.transform, URITransform):
+                transform_node = self.transform.uri
             else:
                 transform_node = BNode()
-                self.transform.to_graph(graph=graph, node=transform_node)
+                self.transform.to_graph(graph=graph, node=transform_node, **kwargs)
 
             if transform_node:
                 graph.add((node, MAP.valuesTransformedBy, transform_node))
@@ -421,9 +423,18 @@ class Mapping(object):
         return graph
 
 
-def create_transform(graph, node, node_map, target=None):
+def create_transform(graph, node, node_map, target=None, fetch=False, loader=None):
+    if isinstance(node, URIRef) and not list(graph.objects(node, RDF.type)):
+        if fetch:
+            if not loader:
+                graph.load(node, format='application/ld+json')
+            else:
+                f_graph = loader(node)
+                graph.__iadd__(f_graph)
+        else:
+            return URITransform(node)
     if list(graph.triples((node, RDF.type, CORE.ThingDescription))):
-        return ResourceTransform.from_graph(graph, node, node_map=node_map, target=target)
+        return ResourceTransform.from_graph(graph, node, node_map=node_map, target=target, fetch=fetch, loader=loader)
     if list(graph.triples((node, RDF.type, MAP.StringReplacement))):
         return StringReplacement.from_graph(graph, node)
     if list(graph.triples((node, RDF.type, MAP.SPARQLQuery))):
@@ -442,6 +453,11 @@ class Transform(object):
         pass
 
 
+class URITransform(Transform):
+    def __init__(self, uri):
+        self.uri = uri
+
+
 class ResourceTransform(Transform):
     def __init__(self, td, target=None):
         # type: (TD) -> None
@@ -449,11 +465,11 @@ class ResourceTransform(Transform):
         self.target = target
 
     @staticmethod
-    def from_graph(graph, node, node_map, target=None):
+    def from_graph(graph, node, node_map, target=None, fetch=False, **kwargs):
         if node in node_map:
             td = node_map[node]
         else:
-            td = TD.from_graph(graph, node, node_map)
+            td = TD.from_graph(graph, node, node_map, fetch=fetch, **kwargs)
         transform = ResourceTransform(td, target=target)
         return transform
 
@@ -559,21 +575,27 @@ class SPARQLQuery(Transform):
         return graph
 
     def apply(self, data, *args, **kwargs):
-        query = self.query.replace('$item', data)
+        if not isinstance(data, list):
+            data = [data]
+        solutions = set()
+        for elm in data:
+            try:
+                query = self.query.replace('$item', elm)
+            except TypeError:
+                continue
 
-        sparql = SPARQLWrapper(self.host)
-        sparql.setReturnFormat(JSON)
+            sparql = SPARQLWrapper(self.host)
+            sparql.setReturnFormat(JSON)
 
-        sparql.setQuery(query)
+            sparql.setQuery(query)
 
-        solutions = []
-        try:
-            results = sparql.query().convert()
+            try:
+                results = sparql.query().convert()
 
-            for result in results["results"]["bindings"]:
-                r = result[result.keys().pop()]["value"]
-                solutions.append(r)
-        except Exception:
-            pass
+                for result in results["results"]["bindings"]:
+                    r = result[result.keys().pop()]["value"]
+                    solutions.add(r)
+            except Exception:
+                pass
 
-        return solutions
+        return list(solutions)

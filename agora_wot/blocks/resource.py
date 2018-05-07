@@ -42,44 +42,80 @@ class Resource(object):
             self.__graph.add((self.__node, RDF.type, URIRef(t)))
 
     @staticmethod
-    def from_graph(graph, node, node_map):
+    def from_graph(graph, node, node_map, fetch=False, loader=None):
         if node in node_map:
             return node_map[node]
 
-        r = Resource()
-        for t in describe(graph, node):
-            r.__graph.add(t)
+        r = Resource(uri=node)
+
+        if loader:
+            f_graph = loader(r.node)
+            r.__graph.__iadd__(f_graph)
+
+
+        for s, p, o in describe(graph, node):
+            if p != RDF.type or isinstance(o, URIRef):
+                r.__graph.add((s, p, o))
 
         for prefix, ns in graph.namespaces():
             r.__graph.bind(prefix, ns)
 
         r.__node = node
-        r.__types = set(graph.objects(node, RDF.type))
+        r.__types = filter(lambda t: isinstance(t, URIRef), set(graph.objects(node, RDF.type)))
 
         node_map[node] = r
         return r
 
-    def to_graph(self, graph=None, abstract=False):
-        if graph is not None:
-            if abstract:
-                for t in self.graph.triples((self.node, RDF.type, None)):
-                    graph.add(t)
-            else:
-                graph.__iadd__(self.graph)
-        elif abstract:
-            graph = Graph()
-            for t in self.graph.triples((self.node, RDF.type, None)):
-                graph.add(t)
-            return graph
+    def to_graph(self, graph=None, abstract=False, fetch=True):
+        base_g = self.graph if fetch else self.__graph
+        res_g = Graph(identifier=self.node) if graph is None else graph
 
-        return self.graph
+        if abstract:
+            for t in base_g.triples((self.node, RDF.type, None)):
+                if isinstance(t[2], URIRef):
+                    res_g.add(t)
+        else:
+            res_g.__iadd__(base_g)
+
+        return res_g
+        #
+        # if graph is not None:
+        #     if abstract:
+        #         for t in base_g.triples((self.node, RDF.type, None)):
+        #             if isinstance(o, URIRef):
+        #                 graph.add(o)
+        #     else:
+        #         graph.__iadd__(g)
+        # elif abstract:
+        #     ag = Graph(identifier=self.node)
+        #     for t in g.triples((self.node, RDF.type, None)):
+        #         if isinstance(t[2], URIRef):
+        #             ag.add(t)
+        #     g = ag
+        #     # return graph
+        #
+        # return g
 
     @property
     def types(self):
-        return set(self.__graph.objects(subject=self.__node, predicate=RDF.type))
+        if self.__types:
+            return self.__types
+
+        if not self.__graph and isinstance(self.__node, URIRef):
+            try:
+                self.__graph.load(self.__node, format='application/ld+json')
+            except Exception as e:
+                print  e.message
+        return filter(lambda x: isinstance(x, URIRef),
+                      set(self.__graph.objects(subject=self.__node, predicate=RDF.type)))
 
     @property
     def graph(self):
+        if not self.__graph and isinstance(self.__node, URIRef):
+            try:
+                self.__graph.load(self.__node, format='application/ld+json')
+            except Exception as e:
+                print e.message
         return self.__graph
 
     @property

@@ -19,6 +19,7 @@
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 """
 import hashlib
+from abc import abstractmethod
 
 from agora.collector.scholar import Scholar
 from agora.server.fountain import build as bn
@@ -32,7 +33,24 @@ from agora_wot.gateway.publish import build as bpp
 __author__ = 'Fernando Serena'
 
 
-class Gateway(object):
+class AbstractGateway(object):
+    @abstractmethod
+    def query(self, query, stop_event=None, scholar=False, **kwargs):
+        # type: (str, object, bool, **any) -> iter
+        raise NotImplementedError
+
+    @abstractmethod
+    def fragment(self, query, stop_event=None, scholar=False, **kwargs):
+        # type: (str, object, bool, **any) -> iter
+        raise NotImplementedError
+
+    @abstractmethod
+    def shutdown(self):
+        # type: (str) -> None
+        raise NotImplementedError
+
+
+class Gateway(AbstractGateway):
     def __init__(self, agora, ted, cache=None, server_name='localhost', port=5000, path='/gw', id='default',
                  **kwargs):
         self.agora = agora

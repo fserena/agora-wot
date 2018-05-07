@@ -44,14 +44,14 @@ class TED(object):
         ted.__ecosystem = Ecosystem.from_graph(graph, **kwargs)
         return ted
 
-    def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None, abstract=False):
+    def to_graph(self, graph=None, node=None, td_nodes=None, **kwargs):
         if node is None:
             node = self.node or BNode()
         if graph is None:
             graph = bound_graph(str(node))
 
         eco_node = self.ecosystem.node
-        self.ecosystem.to_graph(graph=graph, node=eco_node, td_nodes=td_nodes, th_nodes=th_nodes, abstract=abstract)
+        self.ecosystem.to_graph(graph=graph, node=eco_node, td_nodes=td_nodes, **kwargs)
         graph.add((node, RDF.type, CORE.ThingEcosystemDescription))
         graph.add((node, CORE.describes, eco_node))
 
