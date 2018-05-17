@@ -69,6 +69,8 @@ class Resource(object):
     def to_graph(self, graph=None, abstract=False, fetch=True):
         base_g = self.graph if fetch else self.__graph
         res_g = Graph(identifier=self.node) if graph is None else graph
+        for prefix, uri in base_g.namespaces():
+            res_g.bind(prefix, uri)
 
         if abstract:
             for t in base_g.triples((self.node, RDF.type, None)):
@@ -78,23 +80,6 @@ class Resource(object):
             res_g.__iadd__(base_g)
 
         return res_g
-        #
-        # if graph is not None:
-        #     if abstract:
-        #         for t in base_g.triples((self.node, RDF.type, None)):
-        #             if isinstance(o, URIRef):
-        #                 graph.add(o)
-        #     else:
-        #         graph.__iadd__(g)
-        # elif abstract:
-        #     ag = Graph(identifier=self.node)
-        #     for t in g.triples((self.node, RDF.type, None)):
-        #         if isinstance(t[2], URIRef):
-        #             ag.add(t)
-        #     g = ag
-        #     # return graph
-        #
-        # return g
 
     @property
     def types(self):
