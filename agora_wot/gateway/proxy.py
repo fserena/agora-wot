@@ -633,7 +633,7 @@ class Proxy(object):
                                 else:
                                     sub = self.enrich(BNode(shortuuid.uuid()).n3(ns), p_item, pdict['range'],
                                                       fountain,
-                                                      ns=ns, t_dicts=t_dicts, p_dicts=p_dicts,
+                                                      ns=ns, p_dicts=p_dicts,
                                                       context=context, vars=vars, **kwargs)
                                     if sub:
                                         p_items_res.append(sub['@graph'])
