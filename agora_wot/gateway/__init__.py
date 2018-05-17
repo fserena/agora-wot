@@ -30,6 +30,8 @@ from agora.server.sparql import build as bs
 from agora_wot.gateway.proxy import Proxy
 from agora_wot.gateway.publish import build as bpp
 
+from agora.engine.utils import Wrapper
+
 __author__ = 'Fernando Serena'
 
 
@@ -52,20 +54,31 @@ class AbstractGateway(object):
 
 class Gateway(AbstractGateway):
     def __init__(self, agora, ted, cache=None, server_name='localhost', port=5000, path='/gw', id='default',
-                 **kwargs):
+                 static_fountain=False, serverless=False, **kwargs):
+        self.ted = ted
         self.agora = agora
-        self.proxy = Proxy(ted, self.agora.fountain, server_name=server_name, server_port=port, path=path)
+        self.port = port
+        self.path = path
+        self.server_name = server_name
+        proxy_fountain = Wrapper(self.agora.fountain) if static_fountain else self.agora.fountain
+        self.__static_fountain = static_fountain
+        self.proxy = Proxy(ted, proxy_fountain, server_name=server_name, server_port=port, path=path)
         self.cache = cache
         self.id = id
         self.loader = self.proxy.load
         self.scholars = {}
         self.__sch_init_kwargs = kwargs.copy()
 
-        self.server = bs(self.agora, query_function=self.query, import_name=__name__)
-        bf(self.agora, server=self.server, fragment_function=self.fragment)
-        bp(self.agora.planner, server=self.server)
-        bn(self.agora.fountain, server=self.server)
-        self.server = bpp(self.proxy, server=self.server, cache=cache)
+        if not serverless:
+            self.server = bs(self.agora, query_function=self.query, import_name=__name__)
+            bf(self.agora, server=self.server, fragment_function=self.fragment)
+            bp(self.agora.planner, server=self.server)
+            bn(self.agora.fountain, server=self.server)
+            self.server = bpp(self.proxy, server=self.server, cache=cache)
+
+    @property
+    def static_fountain(self):
+        return self.__static_fountain
 
     @property
     def interceptor(self):
@@ -100,9 +113,17 @@ class Gateway(AbstractGateway):
 
         force_seed = self.proxy.instantiate_seeds(**kwargs)
         collector = self._scholar(force_seed, **kwargs) if scholar else None
+
+        if not self.static_fountain:
+            proxy_fountain = Wrapper(self.agora.fountain)
+            query_proxy = Proxy(self.ted, proxy_fountain, server_name=self.server_name, server_port=self.port,
+                                path=self.path)
+        else:
+            query_proxy = self.proxy
+
         return self.agora.query(query,
                                 cache=self.cache,
-                                loader=self.loader,
+                                loader=query_proxy.load,
                                 stop_event=stop_event,
                                 collector=collector,
                                 force_seed=force_seed)
@@ -113,9 +134,17 @@ class Gateway(AbstractGateway):
 
         force_seed = self.proxy.instantiate_seeds(**kwargs)
         collector = self._scholar(force_seed, **kwargs) if scholar else None
+
+        if not self.static_fountain:
+            proxy_fountain = Wrapper(self.agora.fountain)
+            fragment_proxy = Proxy(self.ted, proxy_fountain, server_name=self.server_name, server_port=self.port,
+                                path=self.path)
+        else:
+            fragment_proxy = self.proxy
+
         return self.agora.fragment_generator(query,
                                              cache=self.cache,
-                                             loader=self.loader,
+                                             loader=fragment_proxy.load,
                                              stop_event=stop_event,
                                              collector=collector,
                                              force_seed=force_seed)
