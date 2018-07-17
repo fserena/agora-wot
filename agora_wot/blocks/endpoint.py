@@ -110,7 +110,7 @@ class Endpoint(object):
                 for val in vals:
                     if val:
                         query_list.append(u'{}={}'.format(v, val))
-                    else:
+                    elif not v.startswith('$'):
                         query_list.append(v)
         query_str = '&'.join(query_list)
 
