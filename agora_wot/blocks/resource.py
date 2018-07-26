@@ -48,10 +48,9 @@ class Resource(object):
 
         r = Resource(uri=node)
 
-        if loader:
+        if fetch and loader:
             f_graph = loader(r.node)
             r.__graph.__iadd__(f_graph)
-
 
         for s, p, o in describe(graph, node):
             if p != RDF.type or isinstance(o, URIRef):

@@ -113,10 +113,11 @@ class Ecosystem(object):
         self.__roots = set([])
         self.__root_tds = set([])
         self.__node_td_map = {}
+        self.__td_id_map = {}
         self.node = BNode()
 
     @staticmethod
-    def from_graph(graph, loader=None, **kwargs):
+    def from_graph(graph, loader=None, fetch=True, **kwargs):
         eco = Ecosystem()
 
         try:
@@ -133,16 +134,17 @@ class Ecosystem(object):
         namespaces = dict(graph.namespaces()).values()
 
         for r_node in graph.objects(node, CORE.hasComponent):
-            if not list(graph.objects(r_node, RDF.type)):
+            if fetch and not list(graph.objects(r_node, RDF.type)):
                 load_component(r_node, graph, trace=load_trace, loader=loader, namespaces=namespaces)
 
             root_nodes.add(r_node)
 
-        for _, ext_td in graph.subject_objects(CORE.extends):
-            load_component(ext_td, graph, trace=load_trace, loader=loader, namespaces=namespaces)
+        if fetch:
+            for _, ext_td in graph.subject_objects(CORE.extends):
+                load_component(ext_td, graph, trace=load_trace, loader=loader, namespaces=namespaces)
 
-        for _, ext_td in graph.subject_objects(MAP.valuesTransformedBy):
-            load_component(ext_td, graph, trace=load_trace, loader=loader, namespaces=namespaces)
+            for _, ext_td in graph.subject_objects(MAP.valuesTransformedBy):
+                load_component(ext_td, graph, trace=load_trace, loader=loader, namespaces=namespaces)
 
         for r_node in root_nodes:
             try:
@@ -247,6 +249,7 @@ class Ecosystem(object):
             self.__tds.add(td)
             self.__resources.add(td.resource)
             self.__node_td_map[td.resource.node] = td
+            self.__td_id_map[td.id] = td
             if update_network:
                 self.network()
 
@@ -324,3 +327,19 @@ class Ecosystem(object):
                         yield r
         except Exception:
             pass
+
+    def root_vars(self, td):
+        def __follow_suc(td_id):
+            s_td = self.__td_id_map[td_id]
+            td_vars = s_td.direct_vars
+            if not td_vars:
+                suc_vars = map(lambda x: __follow_suc(x), bfs_succ_dict.get(td_id, []))
+                if suc_vars:
+                    td_vars = set.union(*suc_vars)
+            return td_vars
+
+        bfs_succ = list(nx.bfs_successors(self.network(), td.id))
+        bfs_succ_dict = dict(bfs_succ)
+        vars = __follow_suc(td.id)
+
+        return vars

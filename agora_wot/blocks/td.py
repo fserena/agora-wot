@@ -18,6 +18,7 @@
   limitations under the License.
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 """
+import traceback
 from abc import abstractmethod
 
 from SPARQLWrapper import SPARQLWrapper, JSON
@@ -31,8 +32,6 @@ from agora_wot.blocks.rdfsource import RDFSource
 from agora_wot.blocks.resource import Resource
 from agora_wot.blocks.utils import bound_graph, encode_rdict
 from agora_wot.ns import CORE, MAP
-
-import traceback
 
 __author__ = 'Fernando Serena'
 
@@ -75,7 +74,11 @@ class TD(object):
                 if ext in node_map:
                     ext_td = node_map[ext]
                 else:
+                    if kwargs.get('loader', None) and not set(graph.triples((ext, None, None))):
+                        graph.__iadd__(kwargs['loader'](ext))
+
                     ext_td = TD.from_graph(graph, ext, node_map, **kwargs)
+                    node_map[ext] = ext_td
                 td.__td_ext.add(ext_td)
         except (IndexError, ValueError):
             pass
@@ -99,8 +102,11 @@ class TD(object):
         return td
 
     def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None, abstract=False, **kwargs):
+        if td_nodes is None:
+            td_nodes = {}
+
         if node is None:
-            node = td_nodes.get(self, BNode()) if td_nodes else (self.node or BNode())
+            node = td_nodes.get(self, None) or self.node or BNode()
 
         if graph is None:
             graph = bound_graph(str(node))
@@ -222,6 +228,11 @@ class TD(object):
         return self.__vars
 
     @property
+    def direct_vars(self):
+        # type: (None) -> iter
+        return reduce(lambda x, y: x.union(y.endpoint_vars), self.access_mappings, set())
+
+    @property
     def node(self):
         return self.__node
 
@@ -241,11 +252,15 @@ class AccessMapping(object):
         self.__endpoint = endpoint
         self.__find_vars()
 
-    def __find_vars(self):
+    def __find_endpoint_vars(self):
         if self.__endpoint:
             ref = self.__endpoint.href
             for param in find_params(str(ref)):
-                self.__vars.add(param)
+                yield param
+
+    def __find_vars(self):
+        if self.__endpoint:
+            self.__vars.update(set(self.__find_endpoint_vars()))
 
         for m in self.mappings:
             if isinstance(m.transform, ResourceTransform):
@@ -320,6 +335,10 @@ class AccessMapping(object):
     @property
     def vars(self):
         return frozenset(self.__vars)
+
+    @property
+    def endpoint_vars(self):
+        return frozenset(self.__find_endpoint_vars())
 
     @property
     def endpoint(self):
