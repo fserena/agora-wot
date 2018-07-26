@@ -122,7 +122,7 @@ class Endpoint(object):
         if self.intercept:
             r = self.intercept(href)
         else:
-            r = requests.get(href, headers={'Accept': self.media})
+            r = requests.get(href, headers={'Accept': self.media}, timeout=300)
         if self.response_headers is not None:
             r.headers.update(self.response_headers)
         return r
