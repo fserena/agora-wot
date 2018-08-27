@@ -149,7 +149,7 @@ class Gateway(AbstractGateway):
                                 force_seed=force_seed,
                                 **kwargs)
 
-    def fragment(self, query, stop_event=None, scholar=False, **kwargs):
+    def fragment(self, query, stop_event=None, scholar=False, follow_cycles=True, **kwargs):
         if self.interceptor:
             kwargs = self.interceptor(**kwargs)
 
@@ -168,7 +168,8 @@ class Gateway(AbstractGateway):
                                              loader=fragment_proxy.load,
                                              stop_event=stop_event,
                                              collector=collector,
-                                             force_seed=force_seed)
+                                             force_seed=force_seed,
+                                             follow_cycles=follow_cycles)
 
     def shutdown(self):
         for scholar in self.scholars.values():
