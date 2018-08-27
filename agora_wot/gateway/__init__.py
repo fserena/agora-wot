@@ -22,7 +22,6 @@ import hashlib
 from abc import abstractmethod
 from agora.collector.execution import parse_rdf
 from agora.collector.http import http_get, RDF_MIMES
-from agora.collector.scholar import Scholar
 from agora.engine.utils import Wrapper
 from agora.server.fountain import build as bn
 from agora.server.fragment import build as bf
@@ -108,6 +107,8 @@ class Gateway(AbstractGateway):
         self.proxy.interceptor = i
 
     def _scholar(self, force_seed, **kwargs):
+        from agora.collector.scholar import Scholar
+
         scholar_id = 'd'
         required_params = self.proxy.parameters
         if required_params:
