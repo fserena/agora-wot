@@ -20,17 +20,18 @@
 """
 import hashlib
 from abc import abstractmethod
-
+from agora.collector.execution import parse_rdf
+from agora.collector.http import http_get, RDF_MIMES
 from agora.collector.scholar import Scholar
+from agora.engine.utils import Wrapper
 from agora.server.fountain import build as bn
 from agora.server.fragment import build as bf
 from agora.server.planner import build as bp
 from agora.server.sparql import build as bs
+from rdflib import Graph, ConjunctiveGraph
 
 from agora_wot.gateway.proxy import Proxy
 from agora_wot.gateway.publish import build as bpp
-
-from agora.engine.utils import Wrapper
 
 __author__ = 'Fernando Serena'
 
@@ -65,7 +66,7 @@ class Gateway(AbstractGateway):
         self.proxy = Proxy(ted, proxy_fountain, server_name=server_name, server_port=port, path=path)
         self.cache = cache
         self.id = id
-        self.loader = self.proxy.load
+        # self.loader = self.proxy.load
         self.scholars = {}
         self.__sch_init_kwargs = kwargs.copy()
 
@@ -75,6 +76,24 @@ class Gateway(AbstractGateway):
             bp(self.agora.planner, server=self.server)
             bn(self.agora.fountain, server=self.server)
             self.server = bpp(self.proxy, server=self.server, cache=cache)
+
+    @property
+    def loader(self):
+        def wrapper(uri, format=None, **kwargs):
+            result = self.proxy.load(uri, format)
+            if result is None:
+                for fmt in sorted(RDF_MIMES.keys(), key=lambda x: x != format):
+                    result = http_get(uri, format=fmt)
+                    if result is not None and not isinstance(result, bool):
+                        content, headers = result
+                        if not isinstance(content, Graph):
+                            g = ConjunctiveGraph()
+                            parse_rdf(g, content, fmt, headers)
+                            result = g, headers
+                        break
+            return result
+
+        return wrapper
 
     @property
     def static_fountain(self):
@@ -100,7 +119,7 @@ class Gateway(AbstractGateway):
         scholar_id = '/'.join([self.id, scholar_id])
 
         if scholar_id not in self.scholars.keys():
-            scholar = Scholar(planner=self.agora.planner, cache=self.cache, path='fragments',
+            scholar = Scholar(planner=self.agora.planner, cache=self.cache,
                               loader=self.loader, persist_mode=True,
                               id=scholar_id, force_seed=force_seed, **self.__sch_init_kwargs)
             self.scholars[scholar_id] = scholar
@@ -126,7 +145,8 @@ class Gateway(AbstractGateway):
                                 loader=query_proxy.load,
                                 stop_event=stop_event,
                                 collector=collector,
-                                force_seed=force_seed)
+                                force_seed=force_seed,
+                                **kwargs)
 
     def fragment(self, query, stop_event=None, scholar=False, **kwargs):
         if self.interceptor:
@@ -138,7 +158,7 @@ class Gateway(AbstractGateway):
         if not self.static_fountain:
             proxy_fountain = Wrapper(self.agora.fountain)
             fragment_proxy = Proxy(self.ted, proxy_fountain, server_name=self.server_name, server_port=self.port,
-                                path=self.path)
+                                   path=self.path)
         else:
             fragment_proxy = self.proxy
 

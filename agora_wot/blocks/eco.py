@@ -149,7 +149,7 @@ class Ecosystem(object):
         for r_node in root_nodes:
             try:
                 td_node = list(graph.subjects(predicate=CORE.describes, object=r_node)).pop()
-                td = TD.from_graph(graph, td_node, node_map=node_block_map, **kwargs)
+                td = TD.from_graph(graph, td_node, node_map=node_block_map, loader=loader, **kwargs)
                 eco.add_root_from_td(td)
                 td_nodes_dict[r_node] = td
             except IndexError:
@@ -158,7 +158,7 @@ class Ecosystem(object):
 
         for td_node, r_node in graph.subject_objects(predicate=CORE.describes):
             if (td_node, RDF.type, CORE.ThingDescription) in graph and r_node not in root_nodes:
-                td = TD.from_graph(graph, td_node, node_map=node_block_map, **kwargs)
+                td = TD.from_graph(graph, td_node, node_map=node_block_map, loader=loader, **kwargs)
                 eco.add_td(td)
                 eco.__resources.add(td.resource)
                 td_nodes_dict[r_node] = td
