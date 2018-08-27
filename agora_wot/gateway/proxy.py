@@ -401,14 +401,11 @@ class Proxy(object):
 
     def describe_resource(self, tid, b64=None, **kwargs):
         td = self.__rdict[tid]
-        g = ConjunctiveGraph()
 
         fountain = self.fountain
         ns = get_ns(fountain)
-
         prefixes = fountain.prefixes
-        for prefix, uri in prefixes.items():
-            g.bind(prefix, uri)
+        g = ConjunctiveGraph()
 
         ttl = 100000
         try:
@@ -421,6 +418,10 @@ class Proxy(object):
             if kwargs:
                 r_uri = '{}?{}'.format(r_uri, '&'.join(['{}={}'.format(k, kwargs[k]) for k in kwargs]))
             r_uri = URIRef(r_uri)
+
+            g = ConjunctiveGraph(identifier=r_uri)
+            for prefix, uri in prefixes.items():
+                g.bind(prefix, uri)
 
             bnode_map = {}
 
