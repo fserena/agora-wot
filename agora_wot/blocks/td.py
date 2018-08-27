@@ -19,9 +19,8 @@
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 """
 import traceback
-from abc import abstractmethod
-
 from SPARQLWrapper import SPARQLWrapper, JSON
+from abc import abstractmethod
 from rdflib import RDF, Graph
 from rdflib.term import BNode, Literal, URIRef, Node
 from shortuuid import uuid
@@ -56,7 +55,10 @@ class TD(object):
         try:
             r_node = list(graph.objects(subject=node, predicate=CORE.describes)).pop()
         except IndexError:
-            raise ValueError
+            raise ValueError('No described thing')
+
+        if kwargs.get('loader', None) and not set(graph.triples((r_node, None, None))):
+            graph.__iadd__(kwargs['loader'](r_node))
 
         resource = Resource.from_graph(graph, r_node, node_map=node_map, **kwargs)
 
@@ -167,6 +169,11 @@ class TD(object):
         self.__vars = reduce(lambda x, y: set.union(x, y), [mr.vars for mr in self.access_mappings], set([]))
         self.__endpoints = set([mr.endpoint for mr in self.access_mappings])
 
+    def remove_access_mapping(self, am):
+        self.__access_mappings.remove(am)
+        self.__vars = reduce(lambda x, y: set.union(x, y), [mr.vars for mr in self.access_mappings], set([]))
+        self.__endpoints = set([mr.endpoint for mr in self.access_mappings])
+
     def add_rdf_source(self, source):
         self.__rdf_sources.add(source)
 
@@ -240,6 +247,10 @@ class TD(object):
     def extends(self):
         return self.__td_ext
 
+    @property
+    def endpoints(self):
+        return self.__endpoints
+
 
 class AccessMapping(object):
     def __init__(self, endpoint):
@@ -251,6 +262,7 @@ class AccessMapping(object):
 
         self.__endpoint = endpoint
         self.__find_vars()
+        self.id = uuid()
 
     def __find_endpoint_vars(self):
         if self.__endpoint:
@@ -293,6 +305,11 @@ class AccessMapping(object):
         except IndexError:
             pass
 
+        try:
+            am.id = list(graph.objects(node, CORE.identifier)).pop()
+        except IndexError:
+            pass
+
         node_map[node] = am
         return am
 
@@ -306,6 +323,7 @@ class AccessMapping(object):
             return graph
 
         graph.add((node, RDF.type, MAP.AccessMapping))
+        graph.add((node, CORE.identifier, Literal(self.id)))
 
         if td_nodes:
             if self.endpoint not in td_nodes:
@@ -366,6 +384,7 @@ class Mapping(object):
         self.limit = limit
         self.target_class = target_class
         self.target_datatype = target_datatype
+        self.id = uuid()
 
     @staticmethod
     def from_graph(graph, node, node_map, **kwargs):
@@ -405,6 +424,11 @@ class Mapping(object):
         except IndexError:
             pass
 
+        try:
+            mapping.id = list(graph.objects(node, CORE.identifier)).pop()
+        except IndexError:
+            pass
+
         node_map[node] = mapping
         return mapping
 
@@ -418,6 +442,7 @@ class Mapping(object):
             return graph
 
         graph.add((node, RDF.type, MAP.Mapping))
+        graph.add((node, CORE.identifier, Literal(self.id)))
         graph.add((node, MAP.predicate, URIRef(self.predicate)))
         graph.add((node, MAP.key, Literal(self.key)))
         graph.add((node, MAP.rootMode, Literal(self.root)))

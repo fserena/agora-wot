@@ -28,7 +28,8 @@ from rdflib.term import Node, BNode, Literal
 
 from agora_wot.blocks.evaluate import evaluate
 from agora_wot.blocks.utils import bound_graph
-from agora_wot.ns import WOT
+from agora_wot.ns import WOT, CORE
+from shortuuid import uuid
 
 __author__ = 'Fernando Serena'
 
@@ -38,6 +39,7 @@ log = logging.getLogger('agora.wot.blocks')
 class Endpoint(object):
     def __init__(self, href=None, media=None, whref=None, intercept=None, response_headers=None):
         self.href = href
+        self.id = uuid()
         self.whref = whref
         self.media = media or 'application/json'
         self.intercept = intercept
@@ -55,6 +57,11 @@ class Endpoint(object):
         endpoint.node = node
         try:
             endpoint.media = list(graph.objects(node, WOT.mediaType)).pop()
+        except IndexError:
+            pass
+
+        try:
+            endpoint.id = list(graph.objects(node, CORE.identifier)).pop()
         except IndexError:
             pass
 
@@ -82,6 +89,7 @@ class Endpoint(object):
         if self.whref:
             graph.add((node, WOT.withHRef, Literal(self.whref)))
         graph.add((node, WOT.mediaType, Literal(self.media)))
+        graph.add((node, CORE.identifier, Literal(self.id)))
 
         return graph
 
