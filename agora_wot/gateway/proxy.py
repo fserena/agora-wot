@@ -499,6 +499,8 @@ class Proxy(object):
                                          fountain, ns=ns, vars=td.vars, **resource_args)
                         ld_triples(ld, g)
                         ttl = min(ttl, extract_ttl(response.headers) or ttl)
+                    else:
+                        ttl = 1
 
         except Exception as e:
             # traceback.print_exc()
