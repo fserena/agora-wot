@@ -499,12 +499,12 @@ class Proxy(object):
                                          fountain, ns=ns, vars=td.vars, **resource_args)
                         ld_triples(ld, g)
                         ttl = min(ttl, extract_ttl(response.headers) or ttl)
-                    else:
-                        ttl = 1
+                    elif response.status_code < 500:
+                        ttl = 10
 
         except Exception as e:
             # traceback.print_exc()
-            ttl = 1
+            ttl = 10
             log.warn(r_uri + ': {}'.format(e.message))
         return g, {'Cache-Control': 'max-age={}'.format(ttl)}
 
