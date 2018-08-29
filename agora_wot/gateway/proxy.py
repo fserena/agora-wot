@@ -504,6 +504,7 @@ class Proxy(object):
 
         except Exception as e:
             # traceback.print_exc()
+            ttl = 1
             log.warn(r_uri + ': {}'.format(e.message))
         return g, {'Cache-Control': 'max-age={}'.format(ttl)}
 
