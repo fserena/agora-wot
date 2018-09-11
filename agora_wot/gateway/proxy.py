@@ -499,7 +499,7 @@ class Proxy(object):
                                          fountain, ns=ns, vars=td.vars, **resource_args)
                         ld_triples(ld, g)
                         ttl = min(ttl, extract_ttl(response.headers) or ttl)
-                    elif response.status_code < 500:
+                    elif response.status_code < 500 and response.status_code != 404:
                         ttl = 10
 
         except Exception as e:
