@@ -287,9 +287,9 @@ class AccessMapping(object):
         try:
             e_node = list(graph.objects(node, MAP.mapsResourcesFrom)).pop()
         except IndexError:
-            pass
-
-        endpoint = Endpoint.from_graph(graph, e_node, node_map=node_map)
+            endpoint = None
+        else:
+            endpoint = Endpoint.from_graph(graph, e_node, node_map=node_map)
 
         am = AccessMapping(endpoint)
 
@@ -325,15 +325,17 @@ class AccessMapping(object):
         graph.add((node, RDF.type, MAP.AccessMapping))
         graph.add((node, CORE.identifier, Literal(self.id)))
 
-        if td_nodes:
-            if self.endpoint not in td_nodes:
-                td_nodes[self.endpoint] = BNode()
-            e_node = td_nodes[self.endpoint]
-        else:
-            e_node = self.endpoint.node or BNode()
+        if self.endpoint:
+            if td_nodes:
+                if self.endpoint not in td_nodes:
+                    td_nodes[self.endpoint] = BNode()
+                e_node = td_nodes[self.endpoint]
+            else:
+                e_node = self.endpoint.node if self.endpoint else None
 
-        graph.add((node, MAP.mapsResourcesFrom, e_node))
-        self.endpoint.to_graph(graph=graph, node=e_node)
+            graph.add((node, MAP.mapsResourcesFrom, e_node))
+            if self.endpoint:
+                self.endpoint.to_graph(graph=graph, node=e_node)
 
         for m in self.mappings:
             if td_nodes:
