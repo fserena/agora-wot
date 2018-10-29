@@ -331,7 +331,7 @@ class Ecosystem(object):
     def root_vars(self, td):
         def __follow_suc(td_id):
             s_td = self.__td_id_map[td_id]
-            td_vars = s_td.direct_vars
+            td_vars = set(filter(lambda v: v not in ['$item', '$parent'], s_td.direct_vars))
             if not td_vars:
                 suc_vars = map(lambda x: __follow_suc(x), bfs_succ_dict.get(td_id, []))
                 if suc_vars:
