@@ -35,7 +35,7 @@ from agora_wot.gateway.publish import build as bpp
 __author__ = 'Fernando Serena'
 
 
-class AbstractGateway(object):
+class AbstractDataGateway(object):
     @abstractmethod
     def query(self, query, stop_event=None, scholar=False, **kwargs):
         # type: (str, object, bool, **any) -> iter
@@ -52,7 +52,7 @@ class AbstractGateway(object):
         raise NotImplementedError
 
 
-class Gateway(AbstractGateway):
+class DataGateway(AbstractDataGateway):
     def __init__(self, agora, ted, cache=None, server_name='localhost', port=5000, path='/gw', id='default',
                  static_fountain=False, serverless=False, **kwargs):
         self.ted = ted
