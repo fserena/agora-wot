@@ -43,7 +43,7 @@ class Endpoint(object):
         self.whref = whref
         self.media = media or 'application/json'
         self.intercept = intercept
-        self.node = None
+        self.node = BNode()
         self.response_headers = response_headers
 
     @staticmethod

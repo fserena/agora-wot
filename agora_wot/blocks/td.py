@@ -333,9 +333,10 @@ class AccessMapping(object):
             else:
                 e_node = self.endpoint.node if self.endpoint else None
 
-            graph.add((node, MAP.mapsResourcesFrom, e_node))
-            if self.endpoint:
-                self.endpoint.to_graph(graph=graph, node=e_node)
+            if e_node:
+                graph.add((node, MAP.mapsResourcesFrom, e_node))
+                if self.endpoint:
+                    self.endpoint.to_graph(graph=graph, node=e_node)
 
         for m in self.mappings:
             if td_nodes:
