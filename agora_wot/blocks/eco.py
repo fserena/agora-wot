@@ -66,10 +66,11 @@ def load_component(uri, graph, trace=None, loader=None, namespaces=None):
     if any([ns in uri for ns in namespaces]):
         return
 
-    log.debug(u'Fetching required component: {}...'.format(uri))
-
     if loader is None:
         loader = request_loader
+
+    if loader == request_loader:
+        log.debug(u'Fetching required component: {}...'.format(uri))
 
     comp_g = loader(uri)
     trace.append(uri)
