@@ -1,9 +1,6 @@
 """
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Ontology Engineering Group
-        http://www.oeg-upm.net/
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2017 Ontology Engineering Group.
+  Copyright (C) 2018 Fernando Serena
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -22,6 +19,7 @@ import logging
 from urlparse import urljoin, urlparse, parse_qs, urlunparse
 
 import requests
+from flask import Response
 from rdflib import Graph
 from rdflib import RDF
 from rdflib.term import Node, BNode, Literal
@@ -48,7 +46,7 @@ class Endpoint(object):
 
     @staticmethod
     def from_graph(graph, node, node_map):
-        # type: (Graph, Node) -> iter
+        # type: (Graph, Node, dict) -> Endpoint
 
         if node in node_map:
             return node_map[node]
@@ -75,6 +73,7 @@ class Endpoint(object):
         return endpoint
 
     def to_graph(self, graph=None, node=None):
+        # type: (Graph, Node) -> Graph
         if node is None:
             node = self.node or BNode()
         if graph is None:
@@ -103,12 +102,14 @@ class Endpoint(object):
         return endpoint
 
     def evaluate_href(self, graph=None, subject=None, **kwargs):
+        # type: (Graph, basestring, dict) -> basestring
         href = self.href
         for v in filter(lambda x: x in href, kwargs):
             href = href.replace(v, kwargs[v])
         return evaluate(href, graph=graph, subject=subject)
 
     def invoke(self, graph=None, subject=None, **kwargs):
+        # type: (Graph, basestring, dict) -> Response
         href = self.evaluate_href(graph=graph, subject=subject, **kwargs)
 
         href_parse = urlparse(href)

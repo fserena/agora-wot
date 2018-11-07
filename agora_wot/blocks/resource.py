@@ -1,9 +1,6 @@
 """
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Ontology Engineering Group
-        http://www.oeg-upm.net/
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2017 Ontology Engineering Group.
+  Copyright (C) 2018 Fernando Serena
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -21,7 +18,7 @@
 
 from rdflib import Graph
 from rdflib import RDF
-from rdflib.term import BNode, URIRef
+from rdflib.term import BNode, URIRef, Node
 
 from agora_wot.blocks.utils import bound_graph, describe
 
@@ -43,6 +40,7 @@ class Resource(object):
 
     @staticmethod
     def from_graph(graph, node, node_map, fetch=False, loader=None):
+        # type: (Graph, Node, dict, bool, callable) -> Resource
         if node in node_map:
             return node_map[node]
 
@@ -66,6 +64,7 @@ class Resource(object):
         return r
 
     def to_graph(self, graph=None, abstract=False, fetch=True):
+        # type: (Graph, bool, bool) -> Graph
         base_g = self.graph if fetch else self.__graph
         res_g = Graph(identifier=self.node) if graph is None else graph
         for prefix, uri in base_g.namespaces():
@@ -82,6 +81,7 @@ class Resource(object):
 
     @property
     def types(self):
+        # type: () -> iter[URIRef]
         if self.__types:
             return self.__types
 
@@ -95,6 +95,7 @@ class Resource(object):
 
     @property
     def graph(self):
+        # type: () -> Graph
         if not self.__graph and isinstance(self.__node, URIRef):
             try:
                 self.__graph.load(self.__node, format='application/ld+json')
@@ -104,4 +105,5 @@ class Resource(object):
 
     @property
     def node(self):
+        # type: () -> Node
         return self.__node

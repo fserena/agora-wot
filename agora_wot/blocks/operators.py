@@ -1,9 +1,6 @@
 """
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Ontology Engineering Group
-        http://www.oeg-upm.net/
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2017 Ontology Engineering Group.
+  Copyright (C) 2018 Fernando Serena
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -21,15 +18,18 @@
 from urlparse import urlparse
 
 from agora.engine.plan.agp import extend_uri
-from rdflib import URIRef
+from rdflib import URIRef, Graph
+from rdflib.term import Node
 
 __author__ = 'Fernando Serena'
 
 
-def lslug(url, **kwargs):
+def lslug(url):
+    # type: (basestring) -> basestring
     return urlparse(url, allow_fragments=True).path.split('/')[-1]
 
 
 def objectValue(pred_str, graph, subject):
+    # type: (str, Graph, Node) -> iter[str]
     pred_uri = URIRef(extend_uri(pred_str, dict(graph.namespaces())))
     return list(graph.objects(subject, pred_uri)).pop().toPython()

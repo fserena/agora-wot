@@ -64,6 +64,7 @@ class TED(object):
 
     @property
     def ecosystem(self):
+        # type: () -> Ecosystem
         return self.__ecosystem
 
     @ecosystem.setter

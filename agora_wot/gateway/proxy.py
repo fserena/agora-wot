@@ -1,9 +1,6 @@
 """
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Ontology Engineering Group
-        http://www.oeg-upm.net/
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2017 Ontology Engineering Group.
+  Copyright (C) 2018 Fernando Serena
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -245,9 +242,22 @@ def ld_triples(ld, g=None):
     return g
 
 
+def __remove_type_redundancy(fountain, types, ns):
+    known_types = fountain.types
+    n3_types = {t.n3(ns): t for t in types}
+    n3_filtered = filter(
+        lambda t: t in known_types and not set.intersection(set(fountain.get_type(t)['sub']),
+                                                            n3_types.keys()),
+        n3_types.keys())
+    return map(lambda t: n3_types.get(t), n3_filtered)
+
+
+def process_arguments(**kwargs):
+    return {k: v.pop() if isinstance(v, list) else v for k, v in kwargs.items()}
+
+
 class Proxy(object):
     def __init__(self, ted, fountain, server_name='proxy', url_scheme='http', server_port=None, path=''):
-        # type: (TED) -> None
         self.__ted = ted
         self.__fountain = fountain
         self.__seeds = set([])
@@ -302,28 +312,16 @@ class Proxy(object):
 
         return params
 
-    def process_arguments(self, **kwargs):
-        return {k: v.pop() if isinstance(v, list) else v for k, v in kwargs.items()}
-
-    def __remove_type_redundancy(self, fountain, types, ns):
-        known_types = fountain.types
-        n3_types = {t.n3(ns): t for t in types}
-        n3_filtered = filter(
-            lambda t: t in known_types and not set.intersection(set(fountain.get_type(t)['sub']),
-                                                                n3_types.keys()),
-            n3_types.keys())
-        return map(lambda t: n3_types.get(t), n3_filtered)
-
     def instantiate_seeds(self, **kwargs):
         seeds = {}
-        kwargs = self.process_arguments(**kwargs)
+        kwargs = process_arguments(**kwargs)
         if self.interceptor:
             kwargs = self.interceptor(**kwargs)
 
         fountain = self.fountain
         ns = get_ns(fountain)
 
-        root_types = reduce(lambda x, y: x.union(self.__remove_type_redundancy(fountain, y.types, ns)),
+        root_types = reduce(lambda x, y: x.union(__remove_type_redundancy(fountain, y.types, ns)),
                             self.ecosystem.root_resources,
                             set())
         n3_root_types = {t.n3(ns): t for t in root_types}
@@ -384,7 +382,7 @@ class Proxy(object):
     def path(self):
         return self.__wrapper.path
 
-    def load(self, uri, format=None, **kwargs):
+    def load(self, uri, **kwargs):
         kwargs = {k: kwargs[k].pop() for k in kwargs}
         return self.__wrapper.load(uri, **kwargs)
 

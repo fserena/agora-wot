@@ -1,9 +1,6 @@
 """
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Ontology Engineering Group
-        http://www.oeg-upm.net/
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2017 Ontology Engineering Group.
+  Copyright (C) 2018 Fernando Serena
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -48,7 +45,7 @@ class AbstractDataGateway(object):
 
     @abstractmethod
     def shutdown(self):
-        # type: (str) -> None
+        # type: () -> None
         raise NotImplementedError
 
 
@@ -65,7 +62,6 @@ class DataGateway(AbstractDataGateway):
         self.proxy = Proxy(ted, proxy_fountain, server_name=server_name, server_port=port, path=path)
         self.cache = cache
         self.id = id
-        # self.loader = self.proxy.load
         self.scholars = {}
         self.__sch_init_kwargs = kwargs.copy()
 

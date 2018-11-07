@@ -1,9 +1,6 @@
 """
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Ontology Engineering Group
-        http://www.oeg-upm.net/
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2017 Ontology Engineering Group.
+  Copyright (C) 2018 Fernando Serena
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -25,8 +22,9 @@ import networkx as nx
 import requests
 from rdflib import Graph
 from rdflib import RDF
-from rdflib.term import BNode, URIRef
+from rdflib.term import BNode, URIRef, Node
 
+from agora_wot.blocks.endpoint import Endpoint
 from agora_wot.blocks.resource import Resource
 from agora_wot.blocks.td import TD, ResourceTransform
 from agora_wot.blocks.utils import bound_graph
@@ -38,6 +36,7 @@ log = logging.getLogger('agora.wot.blocks')
 
 
 def request_loader(uri):
+    # type: (basestring) -> Graph
     try:
         response = requests.get(uri, headers={'Accept': 'text/turtle'})
         if response.status_code == 200:
@@ -50,6 +49,7 @@ def request_loader(uri):
 
 
 def load_component(uri, graph, trace=None, loader=None, namespaces=None):
+    # type: (basestring, Graph, iter, callable, iter) -> None
     if trace is None:
         trace = []
 
@@ -107,8 +107,6 @@ def load_component(uri, graph, trace=None, loader=None, namespaces=None):
 
 class Ecosystem(object):
     def __init__(self):
-        # type: (None) -> None
-
         self.__resources = set([])
         self.__tds = set([])
         self.__roots = set([])
@@ -119,6 +117,7 @@ class Ecosystem(object):
 
     @staticmethod
     def from_graph(graph, loader=None, fetch=True, **kwargs):
+        # type: (Graph, callable, bool, dict) -> Ecosystem
         eco = Ecosystem()
 
         try:
@@ -172,6 +171,7 @@ class Ecosystem(object):
         return eco
 
     def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None, abstract=False, **kwargs):
+        # type: (Graph, Node, dict, dict, bool, dict) -> Graph
         if node is None:
             node = self.node or BNode()
         if graph is None:
@@ -204,14 +204,17 @@ class Ecosystem(object):
 
     @property
     def resources(self):
+        # type: () -> frozenset[Resource]
         return frozenset(self.__resources)
 
     @property
     def tds(self):
-        return self.__tds
+        # type: () -> frozenset[TD]
+        return frozenset(self.__tds)
 
     @property
     def endpoints(self):
+        # type: () -> iter[Endpoint]
         yielded = []
         for td in self.__tds:
             for am in td.access_mappings:
@@ -244,7 +247,7 @@ class Ecosystem(object):
             self.__resources.add(root)
 
     def add_td(self, td, update_network=True):
-        # type: (TD) -> None
+        # type: (TD, bool) -> None
         if td not in self.__tds:
             self.__remove_td_by_id(td)
             self.__tds.add(td)
@@ -256,22 +259,27 @@ class Ecosystem(object):
 
     @property
     def roots(self):
+        # type: () -> frozenset[Resource, TD]
         return frozenset(self.__roots)
 
     @property
     def root_resources(self):
+        # type: () -> frozenset[Resource]
         return frozenset([root.resource if isinstance(root, TD) else root for root in self.__roots])
 
     @property
     def td_root_resources(self):
+        # type: () -> frozenset[Resource]
         return frozenset([root.resource for root in self.__roots if isinstance(root, TD)])
 
     @property
     def non_td_root_resources(self):
+        # type: () -> frozenset[Resource]
         return frozenset([root for root in self.__roots if not isinstance(root, TD)])
 
     @property
     def root_types(self):
+        # type: () -> frozenset[URIRef]
         types = set([])
         for root in self.__roots:
             resource = root.resource if isinstance(root, TD) else root
@@ -279,6 +287,7 @@ class Ecosystem(object):
         return frozenset(types)
 
     def network(self):
+        # type: () -> nx.DiGraph
         network = nx.DiGraph()
         children = set([])
         for td in self.__tds:
@@ -316,11 +325,13 @@ class Ecosystem(object):
         return network
 
     def tds_by_type(self, t):
+        # type: (URIRef) -> iter[TD]
         for td in self.__root_tds:
             if t in td.resource.types:
                 yield td
 
     def resources_by_type(self, t):
+        # type: (URIRef) -> iter[Resource]
         try:
             for r in filter(lambda x: isinstance(x.node, URIRef), self.__roots):
                 if not isinstance(r, TD):
@@ -330,6 +341,7 @@ class Ecosystem(object):
             pass
 
     def root_vars(self, td):
+        # type: (TD) -> iter
         def __follow_suc(td_id):
             s_td = self.__td_id_map[td_id]
             td_vars = set(filter(lambda v: v not in ['$item', '$parent'], s_td.direct_vars))

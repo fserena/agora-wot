@@ -1,9 +1,6 @@
 """
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Ontology Engineering Group
-        http://www.oeg-upm.net/
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-  Copyright (C) 2017 Ontology Engineering Group.
+  Copyright (C) 2018 Fernando Serena
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -49,6 +46,7 @@ class TD(object):
 
     @staticmethod
     def from_graph(graph, node, node_map, **kwargs):
+        # type: (Graph, Node, dict, iter) -> TD
         if node in node_map:
             return node_map[node]
 
@@ -104,6 +102,7 @@ class TD(object):
         return td
 
     def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None, abstract=False, **kwargs):
+        # type: (Graph, Node, dict, dict, bool, dict) -> Graph
         if td_nodes is None:
             td_nodes = {}
 
@@ -158,30 +157,36 @@ class TD(object):
         return graph
 
     @staticmethod
-    def from_types(types=[], id=None, uri=None):
+    def from_types(types=[], id=None):
+        # type: (iter, basestring) -> TD
         if types:
             r = Resource(uri=None, types=types)
             return TD(r, id)
 
     def add_access_mapping(self, am, own=True):
+        # type: (AccessMapping, bool) -> None
         if own:
             self.__access_mappings.add(am)
         self.__vars = reduce(lambda x, y: set.union(x, y), [mr.vars for mr in self.access_mappings], set([]))
         self.__endpoints = set([mr.endpoint for mr in self.access_mappings])
 
     def remove_access_mapping(self, am):
+        # type: (AccessMapping) -> None
         self.__access_mappings.remove(am)
         self.__vars = reduce(lambda x, y: set.union(x, y), [mr.vars for mr in self.access_mappings], set([]))
         self.__endpoints = set([mr.endpoint for mr in self.access_mappings])
 
     def add_rdf_source(self, source):
+        # type: (RDFSource) -> None
         self.__rdf_sources.add(source)
 
     def endpoint_mappings(self, e):
+        # type: (Endpoint) -> set[Mapping]
         return reduce(lambda x, y: set.union(x, y),
                       map(lambda x: x.mappings, filter(lambda x: x.endpoint == e, self.access_mappings)), set([]))
 
     def clone(self, id=None, **kwargs):
+        # type: (str, dict) -> TD
         new = TD(self.__resource, id=id)
         new.__node = self.node
         for am in self.__access_mappings:
@@ -202,12 +207,12 @@ class TD(object):
 
     @property
     def id(self):
-        # type: (None) -> str
+        # type: () -> basestring
         return self.__id
 
     @property
     def access_mappings(self):
-        # type: (None) -> iter
+        # type: () -> iter[AccessMapping]
         all_am = set()
         for ext in self.extends:
             all_am.update(ext.access_mappings)
@@ -216,39 +221,42 @@ class TD(object):
 
     @property
     def base(self):
-        # type: (None) -> iter
+        # type: () -> iter[Endpoint]
         return frozenset(self.__endpoints)
 
     @property
     def rdf_sources(self):
-        # type: (None) -> iter
+        # type: () -> iter[RDFSource]
         return frozenset(self.__rdf_sources)
 
     @property
     def resource(self):
-        # type: (None) -> Resource
+        # type: () -> Resource
         return self.__resource
 
     @property
     def vars(self):
-        # type: (None) -> iter
+        # type: () -> iter
         return self.__vars
 
     @property
     def direct_vars(self):
-        # type: (None) -> iter
+        # type: () -> iter
         return reduce(lambda x, y: x.union(y.endpoint_vars), self.access_mappings, set())
 
     @property
     def node(self):
+        # type: () -> Node
         return self.__node
 
     @property
     def extends(self):
+        # type: () -> TD
         return self.__td_ext
 
     @property
     def endpoints(self):
+        # type: () -> iter[Endpoint]
         return self.__endpoints
 
 
@@ -280,7 +288,7 @@ class AccessMapping(object):
 
     @staticmethod
     def from_graph(graph, node, node_map, **kwargs):
-        # type: (Graph, Node) -> iter
+        # type: (Graph, Node, dict, dict) -> AccessMapping
         if node in node_map:
             return node_map[node]
 
@@ -501,13 +509,15 @@ class Transform(object):
 
 
 class URITransform(Transform):
+    def apply(self, data, *args, **kwargs):
+        pass
+
     def __init__(self, uri):
         self.uri = uri
 
 
 class ResourceTransform(Transform):
     def __init__(self, td, target=None):
-        # type: (TD) -> None
         self.td = td
         self.target = target
 
@@ -544,7 +554,6 @@ class ResourceTransform(Transform):
 
 class StringReplacement(Transform):
     def __init__(self, match, replace):
-        # type: (TD) -> None
         self.match = match
         self.replace = replace
 
