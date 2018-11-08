@@ -16,10 +16,13 @@
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 """
 import base64
+import copy
 import itertools
 import logging
+import urlparse
+from urllib import quote
 
-from rdflib import ConjunctiveGraph
+from rdflib import ConjunctiveGraph, Graph, URIRef
 from rdflib.term import BNode
 
 from agora_wot.ns import CORE, WOT, MAP
@@ -67,3 +70,56 @@ def bound_graph(identifier=None):
     g.bind('wot', WOT)
     g.bind('map', MAP)
     return g
+
+
+def iriToUri(iri):
+    # type: (str) -> str
+    parts = urlparse.urlparse(iri)
+    return urlparse.urlunparse(
+        part.encode('utf-8') if parti == 1 else quote(part.encode('utf-8'))
+        for parti, part in enumerate(parts)
+    )
+
+
+def get_ns(fountain):
+    # type: (AbstractFountain) -> NamespaceManager
+    g = Graph()
+    prefixes = fountain.prefixes  # type:
+    for prefix, ns in prefixes.items():
+        g.bind(prefix, ns)
+    return g.namespace_manager
+
+
+def fltr(node, prefixes):
+    # type: (object, iter) -> object
+    if isinstance(node, dict):
+        retVal = {}
+        for key in node:
+            if any([key.startswith(p) for p in prefixes]):
+                child = fltr(node[key], prefixes)
+                if child is not None:
+                    retVal[key] = copy.deepcopy(child)
+        if retVal:
+            return retVal
+        else:
+            return None
+    elif isinstance(node, list):
+        retVal = []
+        for entry in node:
+            child = fltr(entry, prefixes)
+            if child:
+                retVal.append(child)
+        if retVal:
+            return retVal
+        else:
+            return None
+    else:
+        return node
+
+
+def n3(t, ns):
+    if isinstance(t, URIRef):
+        t_n3 = t.n3(ns)
+    else:
+        t_n3 = t
+    return t_n3

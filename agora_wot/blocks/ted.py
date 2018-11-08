@@ -25,7 +25,7 @@ from rdflib.term import BNode
 
 from agora_wot.blocks.eco import Ecosystem
 from agora_wot.blocks.td import TD
-from agora_wot.blocks.utils import bound_graph
+from agora_wot.utils import bound_graph
 from agora_wot.ns import CORE
 
 __author__ = 'Fernando Serena'

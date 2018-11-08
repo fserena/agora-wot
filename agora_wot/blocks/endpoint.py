@@ -25,7 +25,7 @@ from rdflib import RDF
 from rdflib.term import Node, BNode, Literal
 
 from agora_wot.blocks.evaluate import evaluate
-from agora_wot.blocks.utils import bound_graph
+from agora_wot.utils import bound_graph
 from agora_wot.ns import WOT, CORE
 from shortuuid import uuid
 

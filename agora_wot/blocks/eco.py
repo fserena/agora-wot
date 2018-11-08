@@ -27,7 +27,7 @@ from rdflib.term import BNode, URIRef, Node
 from agora_wot.blocks.endpoint import Endpoint
 from agora_wot.blocks.resource import Resource
 from agora_wot.blocks.td import TD, ResourceTransform
-from agora_wot.blocks.utils import bound_graph
+from agora_wot.utils import bound_graph
 from agora_wot.ns import CORE, MAP
 
 __author__ = 'Fernando Serena'

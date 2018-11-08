@@ -20,7 +20,7 @@ from rdflib import Graph
 from rdflib import RDF
 from rdflib.term import BNode, URIRef, Node
 
-from agora_wot.blocks.utils import bound_graph, describe
+from agora_wot.utils import bound_graph, describe
 
 __author__ = 'Fernando Serena'
 

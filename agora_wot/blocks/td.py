@@ -26,7 +26,7 @@ from agora_wot.blocks.endpoint import Endpoint
 from agora_wot.blocks.evaluate import find_params
 from agora_wot.blocks.rdfsource import RDFSource
 from agora_wot.blocks.resource import Resource
-from agora_wot.blocks.utils import bound_graph, encode_rdict
+from agora_wot.utils import bound_graph, encode_rdict
 from agora_wot.ns import CORE, MAP
 
 __author__ = 'Fernando Serena'

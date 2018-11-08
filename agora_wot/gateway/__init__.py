@@ -17,14 +17,16 @@
 """
 import hashlib
 from abc import abstractmethod
-from agora.collector.execution import parse_rdf
+
+from agora.collector.execution import parse_rdf, filter_resource
 from agora.collector.http import http_get, RDF_MIMES
+from agora.engine.plan.agp import extend_uri
 from agora.engine.utils import Wrapper
 from agora.server.fountain import build as bn
 from agora.server.fragment import build as bf
 from agora.server.planner import build as bp
 from agora.server.sparql import build as bs
-from rdflib import Graph, ConjunctiveGraph
+from rdflib import Graph, ConjunctiveGraph, URIRef
 
 from agora_wot.gateway.proxy import Proxy
 from agora_wot.gateway.publish import build as bpp
@@ -90,6 +92,24 @@ class DataGateway(AbstractDataGateway):
 
         return wrapper
 
+    def load(self, uri, format=None, filter=False, **kwargs):
+        res_g, headers = self.loader(uri, format=format, **kwargs)
+        if filter:
+            prefixes = self.agora.fountain.prefixes
+            fg = Graph(identifier=uri)
+            for prefix, u in prefixes.items():
+                fg.bind(prefix, u)
+            filter_types = map(lambda x: extend_uri(x, prefixes), self.agora.fountain.types)
+            properties = self.agora.fountain.properties
+            filter_predicates = map(lambda x: extend_uri(x, prefixes), properties)
+            inverses = map(lambda x: set(self.agora.fountain.get_property(x)['inverse']), properties)
+            inverses = reduce(lambda x, y: y.union(x), inverses, set())
+            inverses = map(lambda x: extend_uri(x, prefixes), inverses)
+            filter_resource(URIRef(uri), res_g, fg, types=filter_types or [], predicates=filter_predicates or [],
+                            inverses=inverses or [])
+            res_g = fg
+        return res_g, headers
+
     @property
     def static_fountain(self):
         return self.__static_fountain
@@ -101,6 +121,11 @@ class DataGateway(AbstractDataGateway):
     @interceptor.setter
     def interceptor(self, i):
         self.proxy.interceptor = i
+
+    def seeds(self, **kwargs):
+        seeds = self.proxy.instantiate_seeds(**kwargs)
+        seed_uris = set(reduce(lambda x, y: x + y, seeds.values(), []))
+        return seed_uris
 
     def _scholar(self, force_seed, **kwargs):
         from agora.collector.scholar import Scholar

@@ -171,3 +171,20 @@ class Match(jsonpath_rw.This):
 
     def __str__(self):
         return '`%s`' % self.method
+
+
+def path_data(path, data):
+    # type: (str, object) -> object
+    if path:
+        try:
+            jsonpath_expr = parse(path)
+            p_data = [match.value for match in jsonpath_expr.find(data)]
+            if p_data:
+                if len(p_data) == 1:
+                    return p_data.pop()
+                else:
+                    return p_data
+        except:
+            pass
+
+    return None
