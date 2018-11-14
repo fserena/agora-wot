@@ -26,10 +26,10 @@ import shortuuid
 from agora.collector.http import extract_ttl
 from agora.engine.plan.agp import extend_uri
 from pyld import jsonld
-from rdflib import URIRef, XSD, RDFS, Literal, BNode, Graph, ConjunctiveGraph, RDF, OWL
+from rdflib import URIRef, XSD, RDFS, Literal, BNode, Graph, RDF, OWL
 
 from agora_wot.gateway.path import path_data
-from agora_wot.utils import n3, get_ns, fltr, iriToUri
+from agora_wot.utils import n3, get_ns, fltr, iriToUri, bound_graph
 
 __author__ = 'Fernando Serena'
 
@@ -204,7 +204,7 @@ def type_hints(data, types, fountain, t_dicts=None):
 
 
 def _resource_graph(uri, prefixes):
-    g = ConjunctiveGraph(identifier=uri)
+    g = bound_graph(identifier=uri)
     for prefix, uri in prefixes.items():
         g.bind(prefix, uri)
     return g

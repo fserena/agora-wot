@@ -21,7 +21,7 @@ from abc import abstractmethod
 from agora.collector.execution import parse_rdf, filter_resource
 from agora.collector.http import http_get, RDF_MIMES
 from agora.engine.plan.agp import extend_uri
-from agora.engine.utils import Wrapper
+from agora.engine.utils import Wrapper, Semaphore
 from agora.server.fountain import build as bn
 from agora.server.fragment import build as bf
 from agora.server.planner import build as bp
@@ -66,6 +66,7 @@ class DataGateway(AbstractDataGateway):
         self.id = id
         self.scholars = {}
         self.__sch_init_kwargs = kwargs.copy()
+        self.__stop = Semaphore()
 
         if not serverless:
             self.server = bs(self.agora, query_function=self.query, import_name=__name__)
@@ -124,8 +125,14 @@ class DataGateway(AbstractDataGateway):
 
     def seeds(self, **kwargs):
         seeds = self.proxy.instantiate_seeds(**kwargs)
-        seed_uris = set(reduce(lambda x, y: x + y, seeds.values(), []))
-        return seed_uris
+        seeds = set(reduce(lambda x, y: x + y, seeds.values(), []))
+        return seeds
+
+    def typed_seeds(self, **kwargs):
+        seeds = self.proxy.instantiate_seeds(**kwargs)
+        for t, uris in seeds.items():
+            for uri in uris:
+                yield (uri, t)
 
     def _scholar(self, force_seed, **kwargs):
         from agora.collector.scholar import Scholar
@@ -152,6 +159,9 @@ class DataGateway(AbstractDataGateway):
         if self.interceptor:
             kwargs = self.interceptor(**kwargs)
 
+        if stop_event is None:
+            stop_event = self.__stop or Semaphore()
+
         force_seed = self.proxy.instantiate_seeds(**kwargs)
         collector = self._scholar(force_seed, **kwargs) if scholar else None
 
@@ -173,6 +183,9 @@ class DataGateway(AbstractDataGateway):
     def fragment(self, query, stop_event=None, scholar=False, follow_cycles=True, **kwargs):
         if self.interceptor:
             kwargs = self.interceptor(**kwargs)
+
+        if stop_event is None:
+            stop_event = self.__stop or Semaphore()
 
         force_seed = self.proxy.instantiate_seeds(**kwargs)
         collector = self._scholar(force_seed, **kwargs) if scholar else None
@@ -201,3 +214,9 @@ class DataGateway(AbstractDataGateway):
                 print e.message
 
         self.scholars.clear()
+
+    def __enter__(self):
+        self.__stop.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.__stop.__exit__(exc_type, exc_val, exc_tb)
