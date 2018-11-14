@@ -157,8 +157,8 @@ class TD(object):
         return graph
 
     @staticmethod
-    def from_types(types=[], id=None):
-        # type: (iter, basestring) -> TD
+    def from_types(id=None, types=[]):
+        # type: (basestring, iter) -> TD
         if types:
             r = Resource(uri=None, types=types)
             return TD(r, id)
