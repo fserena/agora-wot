@@ -25,8 +25,8 @@ from rdflib.term import BNode
 
 from agora_wot.blocks.eco import Ecosystem
 from agora_wot.blocks.td import TD
-from agora_wot.utils import bound_graph
 from agora_wot.ns import CORE
+from agora_wot.utils import bound_graph
 
 __author__ = 'Fernando Serena'
 
@@ -70,3 +70,11 @@ class TED(object):
     @ecosystem.setter
     def ecosystem(self, eco):
         self.__ecosystem = eco
+
+    @property
+    def typed_seeds(self):
+        seeds = []
+        for r in self.ecosystem.root_resources:
+            for t in r.types:
+                seeds.append((r.node, t.n3(r.graph.namespace_manager)))
+        return seeds
