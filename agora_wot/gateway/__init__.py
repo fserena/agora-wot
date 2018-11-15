@@ -219,4 +219,5 @@ class DataGateway(AbstractDataGateway):
         self.__stop.__enter__()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.shutdown()
         self.__stop.__exit__(exc_type, exc_val, exc_tb)
