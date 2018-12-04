@@ -285,7 +285,7 @@ class RDFSourceLoader(object):
 class EndpointLoader(object):
     def __init__(self, graph, r_args):
         self.graph = graph
-        self.r_args = r_args
+        self.r_args = r_args or {}
         self.endpoints_data = {}
         self.max_def_ttl = 1000000
 
@@ -485,10 +485,16 @@ class Lifter(object):
             else:
                 yield base_e
 
-    def lift(self, tid, fountain, r_uri, b64, r_args):
+    def lift(self, tid, fountain, r_uri, b64=None, r_args=None, base_graph=None, replace=False):
         prefixes = fountain.prefixes
         g = _resource_graph(r_uri, prefixes)
+        if base_graph:
+            g.__iadd__(base_graph)
         ttl = 10
+
+        if r_args is None:
+            r_args = {}
+
         try:
             td = self.__get_td(tid)
             bp_loader = BlueprintLoader(fountain, self.__ndict, self.url_for)
@@ -517,5 +523,12 @@ class Lifter(object):
         except Exception as e:
             traceback.print_exc()
             log.warn(r_uri + ': {}'.format(e.message))
+
+        if replace and base_graph:
+            diff_g = g - base_graph
+            for s, p, o in diff_g:
+                base_rep_triples = base_graph.triples((s, p, None))
+                for srem, prem, orem in base_rep_triples:
+                    g.remove((srem, prem, orem))
 
         return g, ttl

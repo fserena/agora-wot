@@ -24,12 +24,24 @@ from rdflib.term import Node
 __author__ = 'Fernando Serena'
 
 
-def lslug(url):
+def lslug(url, **kwargs):
     # type: (basestring) -> basestring
     return urlparse(url, allow_fragments=True).path.split('/')[-1]
 
 
-def objectValue(pred_str, graph, subject):
-    # type: (str, Graph, Node) -> iter[str]
+def _build_pred_uri(pred_str, graph):
     pred_uri = URIRef(extend_uri(pred_str, dict(graph.namespaces())))
+    return pred_uri
+
+
+def objectValue(pred_str, graph, subject, **kwargs):
+    # type: (str, Graph, Node) -> iter[str]
+    pred_uri = _build_pred_uri(pred_str)
     return list(graph.objects(subject, pred_uri)).pop().toPython()
+
+
+def filterObjects(pred_str, pattern, graph, subject, **kwargs):
+    # type: (iter, str) -> str
+    pred_uri = _build_pred_uri(pred_str, graph)
+    objects = list(graph.objects(subject, pred_uri))
+    return filter(lambda o: pattern in o, objects).pop().toPython()

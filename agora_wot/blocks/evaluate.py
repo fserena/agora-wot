@@ -18,9 +18,9 @@
 import logging
 import re
 
-from pyparsing import Word, alphas, alphanums, ZeroOrMore, Literal, ParseException
+from pyparsing import Word, alphas, alphanums, ZeroOrMore, Literal, ParseException, Forward
 
-from agora_wot.blocks.operators import lslug, objectValue
+from agora_wot.blocks.operators import lslug, objectValue, filterObjects
 
 __author__ = 'Fernando Serena'
 
@@ -36,32 +36,39 @@ symbols = """!"#%&'*+,-./:;<=>?@[\]^_`|~"""
 arg_chars = alphanums + symbols
 
 # allow expression to be used recursively
-arg = Word(arg_chars)
+expression = Forward()
+arg = expression | Word(arg_chars)
 args = arg + ZeroOrMore("," + arg)
 
-expression = functor + lparen + args + rparen
+expression << functor + lparen + args + rparen
 
 dollar = Literal("$")
 param = Word(alphas)
 rest = Word(arg_chars)
 wrap_param = dollar + param + ZeroOrMore(rest)
 
-operators = {
-    'lslug': lslug,
-    'object': objectValue
-}
-
 
 def evaluate_expression(expr, **kwargs):
     # type: (basestring, dict) -> unicode
-    tokens = expression.parseString(expr)
-    if tokens:
-        f = tokens[0]
-        args = tokens[2:-1]
-        try:
-            return unicode(operators[f](*args, **kwargs))
-        except Exception, e:
-            raise AttributeError(expr)
+
+    def context_w(f):
+        def wrapper(*args, **ext_kwargs):
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    operators = {
+        'lslug': context_w(lslug),
+        'object': context_w(objectValue),
+        'filter': context_w(filterObjects)
+    }
+
+    try:
+
+        ret = eval(expr, {'__builtins__': None}, operators)
+        return unicode(ret)
+    except (IndexError, SyntaxError) as e:
+        log.warning(e.message)
 
 
 def find_params(expr):

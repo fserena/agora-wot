@@ -18,15 +18,14 @@
 import hashlib
 from abc import abstractmethod
 
-from agora.collector.execution import parse_rdf, filter_resource
-from agora.collector.http import http_get, RDF_MIMES
+from agora.collector.execution import filter_resource
 from agora.engine.plan.agp import extend_uri
 from agora.engine.utils import Wrapper, Semaphore
 from agora.server.fountain import build as bn
 from agora.server.fragment import build as bf
 from agora.server.planner import build as bp
 from agora.server.sparql import build as bs
-from rdflib import Graph, ConjunctiveGraph, URIRef
+from rdflib import Graph, URIRef
 
 from agora_wot.gateway.proxy import Proxy
 from agora_wot.gateway.publish import build as bpp
@@ -78,23 +77,13 @@ class DataGateway(AbstractDataGateway):
     @property
     def loader(self):
         def wrapper(uri, format=None, **kwargs):
-            result = self.proxy.load(uri, format)
-            if result is None:
-                for fmt in sorted(RDF_MIMES.keys(), key=lambda x: x != format):
-                    result = http_get(uri, format=fmt)
-                    if result is not None and not isinstance(result, bool):
-                        content, headers = result
-                        if not isinstance(content, Graph):
-                            g = ConjunctiveGraph()
-                            parse_rdf(g, content, fmt, headers)
-                            result = g, headers
-                        break
-            return result
+            return self.proxy.load(uri, format)
 
         return wrapper
 
     def load(self, uri, format=None, filter=False, **kwargs):
         res_g, headers = self.loader(uri, format=format, **kwargs)
+
         if filter:
             prefixes = self.agora.fountain.prefixes
             fg = Graph(identifier=uri)

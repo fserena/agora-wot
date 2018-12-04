@@ -16,8 +16,9 @@
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 """
 import traceback
-from SPARQLWrapper import SPARQLWrapper, JSON
 from abc import abstractmethod
+
+from SPARQLWrapper import SPARQLWrapper, JSON
 from rdflib import RDF, Graph
 from rdflib.term import BNode, Literal, URIRef, Node
 from shortuuid import uuid
@@ -26,8 +27,8 @@ from agora_wot.blocks.endpoint import Endpoint
 from agora_wot.blocks.evaluate import find_params
 from agora_wot.blocks.rdfsource import RDFSource
 from agora_wot.blocks.resource import Resource
-from agora_wot.utils import bound_graph, encode_rdict
 from agora_wot.ns import CORE, MAP
+from agora_wot.utils import bound_graph, encode_rdict
 
 __author__ = 'Fernando Serena'
 

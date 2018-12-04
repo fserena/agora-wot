@@ -17,10 +17,13 @@
 """
 import base64
 import logging
+import sys
 
+from agora.collector.execution import parse_rdf
+from agora.collector.http import RDF_MIMES, http_get, extract_ttl
 from agora.collector.wrapper import ResourceWrapper
 from agora.engine.utils import Wrapper
-from rdflib import Graph
+from rdflib import Graph, ConjunctiveGraph, RDF
 from rdflib.term import URIRef
 
 from agora_wot.blocks.td import TD
@@ -64,6 +67,17 @@ def _parametrize_resource_uri(uri, **kwargs):
     if kwargs:
         uri = '{}?{}'.format(uri, '&'.join(['{}={}'.format(k, kwargs[k]) for k in kwargs]))
     return URIRef(uri)
+
+
+def _load_remote(uri, format=None):
+    for fmt in sorted(RDF_MIMES.keys(), key=lambda x: x != format):
+        result = http_get(uri, format=fmt)
+        if result is not None and not isinstance(result, bool):
+            content, headers = result
+            if not isinstance(content, Graph):
+                g = ConjunctiveGraph()
+                parse_rdf(g, content, fmt, headers)
+                return g, headers
 
 
 class Proxy(object):
@@ -199,7 +213,27 @@ class Proxy(object):
 
     def load(self, uri, format=None, **kwargs):
         kwargs = {k: kwargs[k].pop() for k in kwargs}
-        return self.__wrapper.load(uri, **kwargs)
+        result = self.__wrapper.load(uri, **kwargs)
+
+        if result is None:
+            result = _load_remote(uri, format=format)
+            base_graph = result[0]
+            base_ttl = extract_ttl(result[1])
+            types = base_graph.objects(URIRef(uri), RDF.type)
+            enrichments = reduce(lambda x, y: y.union(x),
+                                 map(lambda t: set(self.ecosystem.enrichments_by_type(t)), types), set())
+            result = self.enrich_resource(uri, enrichments, base_graph, base_ttl)
+        return result
+
+    def enrich_resource(self, r_uri, enrichments, base_graph, base_ttl):
+        min_ttl = sys.maxint
+        for e in enrichments:
+            base_graph, ttl = self.__lifter.lift(e.td.id, self.fountain, URIRef(r_uri), base_graph=base_graph,
+                                                 replace=e.replace)
+            if ttl < min_ttl:
+                min_ttl = ttl
+        result = (base_graph, {'Cache-Control': 'max-age={}'.format(int(min(min_ttl, base_ttl)))})
+        return result
 
     def __gen_uri_args(self, tid, b64, **kwargs):
         if b64 is not None:

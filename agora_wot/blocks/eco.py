@@ -22,13 +22,14 @@ import networkx as nx
 import requests
 from rdflib import Graph
 from rdflib import RDF
-from rdflib.term import BNode, URIRef, Node
+from rdflib.term import BNode, URIRef, Node, Literal
+from shortuuid import uuid
 
 from agora_wot.blocks.endpoint import Endpoint
 from agora_wot.blocks.resource import Resource
 from agora_wot.blocks.td import TD, ResourceTransform
-from agora_wot.utils import bound_graph
 from agora_wot.ns import CORE, MAP
+from agora_wot.utils import bound_graph
 
 __author__ = 'Fernando Serena'
 
@@ -93,6 +94,12 @@ def load_component(uri, graph, trace=None, loader=None, namespaces=None):
         pass
 
     try:
+        th_uri = list(comp_g.objects(uri, CORE.describes)).pop()
+        load_component(th_uri, graph, trace=trace, loader=loader, namespaces=namespaces)
+    except IndexError:
+        pass
+
+    try:
         for _, ext_td_uri in list(comp_g.subject_objects(MAP.valuesTransformedBy)):
             load_component(ext_td_uri, graph, trace=trace, loader=loader, namespaces=namespaces)
     except IndexError:
@@ -113,6 +120,7 @@ class Ecosystem(object):
         self.__root_tds = set([])
         self.__node_td_map = {}
         self.__td_id_map = {}
+        self.__enrichments = set()
         self.node = BNode()
 
     @staticmethod
@@ -168,6 +176,19 @@ class Ecosystem(object):
                 if o in td_nodes_dict:
                     td.vars.update(td_nodes_dict[o].vars)
 
+        for _, impl in graph.subject_objects(CORE.implements):
+            load_component(impl, graph, trace=load_trace, loader=loader, namespaces=namespaces)
+
+        for e_node in graph.subjects(RDF.type, MAP.Enrichment):
+            try:
+                e_td_node = list(graph.objects(e_node, MAP.resourcesEnrichedBy)).pop()
+                if not list(graph.objects(e_td_node, RDF.type)):
+                    load_component(e_td_node, graph, trace=load_trace, loader=loader, namespaces=namespaces)
+                e = Enrichment.from_graph(graph, e_node, node_block_map, **kwargs)
+                eco.__enrichments.add(e)
+            except IndexError:
+                pass
+
         return eco
 
     def to_graph(self, graph=None, node=None, td_nodes=None, th_nodes=None, abstract=False, **kwargs):
@@ -196,9 +217,19 @@ class Ecosystem(object):
                     ext.to_graph(graph=graph, node=ext.node, td_nodes=td_nodes, th_nodes=th_nodes, **kwargs)
                 td.to_graph(graph=graph, node=td_node, td_nodes=td_nodes, th_nodes=th_nodes, **kwargs)
 
-        for root in filter(lambda x: not isinstance(x, TD), self.roots):
+        for root in self.non_td_root_resources:
             graph.add((node, CORE.hasComponent, root.node))
-            root.to_graph(graph, **kwargs)
+            g = root.to_graph(**kwargs)
+            if not abstract:
+                graph.__iadd__(g)
+            else:
+                for t in g.objects(root.node, RDF.type):
+                    graph.add((root.node, RDF.type, t))
+
+        for e in self.__enrichments:
+            graph.add((node, CORE.implements, e.node))
+            if not abstract:
+                e.to_graph(graph=graph, node=e.node, td_nodes=td_nodes)
 
         return graph
 
@@ -211,6 +242,16 @@ class Ecosystem(object):
     def tds(self):
         # type: () -> frozenset[TD]
         return frozenset(self.__tds)
+
+    @property
+    def enrichments(self):
+        # type: () -> frozenset[Enrichment]
+        return frozenset(self.__enrichments)
+
+    def add_enrichment(self, e):
+        # type: (Enrichment) -> None
+        self.add_td(e.td)
+        self.__enrichments.add(e)
 
     @property
     def endpoints(self):
@@ -340,6 +381,14 @@ class Ecosystem(object):
         except Exception:
             pass
 
+    def enrichments_by_type(self, t):
+        # type: (URIRef) -> iter[Enrichment]
+        try:
+            for e in filter(lambda x: x.resource_type == t, self.__enrichments):
+                yield e
+        except Exception:
+            pass
+
     def root_vars(self, td):
         # type: (TD) -> iter
         def __follow_suc(td_id):
@@ -356,3 +405,70 @@ class Ecosystem(object):
         vars = __follow_suc(td.id)
 
         return vars
+
+
+class Enrichment(object):
+    def __init__(self, id=None, type=None, td=None, replace=False):
+        self.resource_type = type
+        self.td = td
+        self.node = BNode()
+        self.id = id or uuid()
+        self.replace = replace
+
+    @staticmethod
+    def from_graph(graph, node, node_map, **kwargs):
+
+        if node in node_map:
+            return node_map[node]
+
+        e = Enrichment()
+        e.node = node
+
+        try:
+            e.id = list(graph.objects(node, CORE.identifier)).pop()
+        except IndexError:
+            pass
+
+        try:
+            e.replace = bool(list(graph.objects(node, MAP.replacesValues)).pop().toPython())
+        except (ValueError, IndexError):
+            pass
+
+        try:
+            e.resource_type = list(graph.objects(node, MAP.instancesOf)).pop()
+        except IndexError:
+            raise ValueError('No resource type provided')
+
+        try:
+            td_node = list(graph.objects(node, MAP.resourcesEnrichedBy)).pop()
+            if td_node in node_map:
+                td = node_map[td_node]
+            else:
+                td = TD.from_graph(graph, td_node, node_map, **kwargs)
+            e.td = td
+        except IndexError:
+            raise ValueError('No TD defined')
+
+        node_map[node] = e
+        return e
+
+    def to_graph(self, graph=None, node=None, td_nodes=None):
+        # type: (Graph, Node, dict) -> Graph
+        if node is None:
+            node = self.node or BNode()
+        if graph is None:
+            graph = bound_graph(identifier=str(node))
+
+        if (node, None, None) in graph:
+            return graph
+
+        graph.add((node, RDF.type, MAP.Enrichment))
+        graph.add((node, CORE.identifier, Literal(self.id)))
+        graph.add((node, MAP.replacesValues, Literal(self.replace)))
+        if self.resource_type:
+            graph.add((node, MAP.instancesOf, URIRef(self.resource_type)))
+        if self.td:
+            td_node = td_nodes.get(self.td, None) if td_nodes else self.td.node
+            graph.add((node, MAP.resourcesEnrichedBy, URIRef(td_node)))
+
+        return graph
